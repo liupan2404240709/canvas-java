@@ -72,6 +72,7 @@ curl http://127.0.0.1:8081/api/v1/health
 阶段说明、设计文档、接口文档在本工程的 `docs/` 目录：
 
 - `plan.md`：整体改写规划与进度
-- `stage-00-scaffold/`：阶段 0（环境与骨架）的说明 / 设计 / 接口文档
+- `stage-00-scaffold/`：阶段 0（环境与骨架）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
+- `stage-01-auth/`：阶段 1（账号体系）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
 
 > 本工程独立于前端仓库 `infinite-canvas-main`，两者平级放在 `D:\project\` 下。

@@ -7,7 +7,7 @@
 | 阶段 | 状态 | 代码 | 文档 |
 | --- | --- | --- | --- |
 | 0 环境与骨架 | ✅ 已完成并通过本机实测 | `canvas-java/` | [stage-00-scaffold](./stage-00-scaffold/README.md)（[设计](./stage-00-scaffold/design.md) / [接口](./stage-00-scaffold/api.md) / [**代码技术说明 12 篇**](./stage-00-scaffold/tech/README.md)） |
-| 1 账号体系 | 待开始 | — | — |
+| 1 账号体系 | ✅ 已完成并通过本机全链路实测 | `src/main/java/.../security/`、`service/impl/AuthServiceImpl` | [stage-01-auth](./stage-01-auth/README.md)（[设计](./stage-01-auth/design.md) / [接口](./stage-01-auth/api.md) / [**代码技术说明 12 篇**](./stage-01-auth/tech/README.md)） |
 | 2 画布项目 | 待开始 | — | — |
 | 3 文件与素材库 | 待开始 | — | — |
 | 4 提示词库 | 待开始 | — | — |

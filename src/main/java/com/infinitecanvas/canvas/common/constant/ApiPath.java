@@ -8,6 +8,10 @@ public final class ApiPath {
 
     public static final String V1 = "/v1";
 
+    public static final String AUTH = V1 + "/auth";
+
+    public static final String USERS = V1 + "/users";
+
     private ApiPath() {
     }
 }

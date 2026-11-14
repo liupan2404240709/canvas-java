@@ -23,6 +23,13 @@ spring:
           max-idle: 8
           min-idle: 2
           max-wait: 1s
+  # 本地开发用 schema.sql 建表，脚本里全部是 CREATE TABLE IF NOT EXISTS，重复启动不会报错。
+  # 生产环境不应该让应用去改表结构，等阶段 8 接 Flyway 来管版本化迁移。
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+      schema-locations: classpath:db/schema.sql
 
 mybatis-plus:
   configuration:
