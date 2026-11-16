@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infinitecanvas.canvas.mapper.CanvasProjectMapper">
+
+    <!-- 列清单写一次，后面加字段只改这里。注意不要用 SELECT *：
+         表的列顺序一旦调整，结果映射就可能错位，显式列名永远安全。 -->
+    <sql id="columns">
+        id, user_id, title, background_mode, show_image_info,
+        viewport_x, viewport_y, viewport_k, node_count, connection_count,
+        version, created_at, updated_at, deleted
+    </sql>
+
+    <select id="selectTrash" resultType="com.infinitecanvas.canvas.entity.CanvasProject">
+        SELECT
+        <include refid="columns"/>
+        FROM t_canvas_project
+        WHERE user_id = #{userId}
+        AND deleted = 1
+        ORDER BY updated_at DESC
+    </select>
+
+    <!-- 手写 UPDATE 绕开逻辑删除：用 updateById 时 MyBatis-Plus 会自动拼上 deleted = 0，
+         而这里要更新的恰恰是 deleted = 1 的行，用内置方法永远匹配不到。 -->
+    <update id="restore">
+        UPDATE t_canvas_project
+        SET deleted    = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND deleted = 1
+    </update>
+</mapper>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infinitecanvas.canvas.mapper.CanvasEdgeMapper">
+
+    <insert id="insertBatch">
+        INSERT INTO t_canvas_connection
+        (id, project_id, edge_key, from_node_key, to_node_key)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.id}, #{item.projectId}, #{item.edgeKey}, #{item.fromNodeKey}, #{item.toNodeKey})
+        </foreach>
+    </insert>
+</mapper>

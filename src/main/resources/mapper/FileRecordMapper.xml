@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infinitecanvas.canvas.mapper.FileRecordMapper">
+
+    <!-- 孤儿文件：本用户、创建时间早于宽限期、且没有任何素材引用。
+         NOT EXISTS 比 LEFT JOIN ... IS NULL 更容易让优化器走 idx_asset_file 做反连接探测，
+         而且语义上就是"存在即排除"，不容易写错。
+         created_at < before 这一条是安全阀：刚上传还没来得及建素材的文件不能被扫走。 -->
+    <select id="selectOrphans" resultType="com.infinitecanvas.canvas.entity.FileRecord">
+        SELECT f.id, f.user_id, f.sha256, f.storage_key, f.original_name,
+               f.mime_type, f.extension, f.bytes, f.width, f.height, f.biz_type, f.created_at
+        FROM t_file f
+        WHERE f.user_id = #{userId}
+          AND f.created_at &lt; #{before}
+          AND NOT EXISTS (SELECT 1 FROM t_asset a WHERE a.file_id = f.id)
+        ORDER BY f.id
+        LIMIT #{limit}
+    </select>
+</mapper>

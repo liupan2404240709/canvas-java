@@ -13,10 +13,16 @@ spring:
     default-property-inclusion: non_null
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 64MB
+      # 容器层上限，比业务上限（app.storage.max-video-size = 100MB）宽松一点：
+      # 容器只管"总共多大"，不认识 MIME；让请求先落到 Controller，
+      # 由应用层给出"视频超过 100MB"这种能看懂的提示，而不是一个框架异常。
+      max-file-size: 128MB
+      max-request-size: 160MB
 
 mybatis-plus:
+  # XML 位置。MyBatis-Plus 的默认值就是 classpath*:/mapper/**/*.xml，
+  # 显式写出来的好处是：以后有人把 XML 挪到别处，不用去翻文档猜默认值。
+  mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
   global-config:
@@ -50,6 +56,14 @@ app:
   login-protection:
     max-attempts: 5
     lock-duration: 15m
+  # 文件存储。root 是相对启动目录的路径，跟项目放在一起方便学习时直接去翻文件。
+  storage:
+    root: ./data/uploads
+    # 不含 context-path：servlet 里是 /media/**，浏览器访问 /api/media/**
+    public-prefix: /media
+    max-image-size: 20MB
+    max-video-size: 100MB
+    max-audio-size: 20MB
 
 logging:
   level:

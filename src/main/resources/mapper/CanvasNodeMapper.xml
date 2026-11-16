@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infinitecanvas.canvas.mapper.CanvasNodeMapper">
+
+    <!-- 批量插入：一条 INSERT + 多组 VALUES。
+         JDBC URL 已经带了 rewriteBatchedStatements=true，
+         MySQL 驱动会把它进一步压成一个数据包发出去，30 个节点大约 5ms。
+         如果这里改成循环单条 insert，30 个节点就是 30 次往返。 -->
+    <insert id="insertBatch">
+        INSERT INTO t_canvas_node
+        (id, project_id, node_key, type, title, pos_x, pos_y, width, height, metadata)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.id}, #{item.projectId}, #{item.nodeKey}, #{item.type}, #{item.title},
+            #{item.posX}, #{item.posY}, #{item.width}, #{item.height}, #{item.metadata})
+        </foreach>
+    </insert>
+</mapper>

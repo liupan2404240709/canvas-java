@@ -21,18 +21,25 @@
 canvas-java/
 ├── docker-compose.yml           # MySQL + Redis
 ├── pom.xml
+├── scripts/                     # 各阶段的全链路验证脚本
 └── src/main
     ├── java/com/infinitecanvas/canvas
     │   ├── CanvasApplication.java
     │   ├── common/              # 统一响应、错误码、异常、常量
-    │   ├── config/              # MyBatis-Plus、Redis、CORS、OpenAPI
+    │   ├── config/              # MyBatis-Plus、Redis、CORS、OpenAPI、审计填充
+    │   ├── security/            # JWT、过滤器、登录保护（阶段 1）
     │   ├── controller/          # 只做参数接收与结果组装
-    │   ├── service/             # 业务逻辑
+    │   ├── service/             # 业务逻辑（接口 + impl）
+    │   ├── mapper/              # MyBatis-Plus Mapper（阶段 1 用户 / 阶段 2 画布）
+    │   ├── entity/              # 与表一一对应
+    │   ├── dto/                 # 入参
     │   ├── vo/                  # 出参
-    │   └── infra/               # 过滤器、MyBatis 处理器等基础设施
+    │   └── infra/               # 过滤器等基础设施
     └── resources
         ├── application.yml      # 公共配置
         ├── application-dev.yml  # 本地连接信息
+        ├── db/schema.sql        # 建表脚本（启动自动执行）
+        ├── mapper/*.xml         # 批量插入、回收站等手写 SQL
         └── logback-spring.xml   # 日志（含 traceId）
 ```
 
@@ -74,5 +81,6 @@ curl http://127.0.0.1:8081/api/v1/health
 - `plan.md`：整体改写规划与进度
 - `stage-00-scaffold/`：阶段 0（环境与骨架）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
 - `stage-01-auth/`：阶段 1（账号体系）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
+- `stage-02-canvas/`：阶段 2（画布项目）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
 
 > 本工程独立于前端仓库 `infinite-canvas-main`，两者平级放在 `D:\project\` 下。

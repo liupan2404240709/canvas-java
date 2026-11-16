@@ -5,6 +5,7 @@ import com.infinitecanvas.canvas.common.constant.ApiPath;
 import com.infinitecanvas.canvas.service.HealthService;
 import com.infinitecanvas.canvas.vo.HealthVO;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +21,7 @@ public class HealthController {
     private final HealthService healthService;
 
     @Operation(summary = "健康检查", description = "依次探测 MySQL 与 Redis，并返回各自耗时")
+    @SecurityRequirements
     @GetMapping
     public Result<HealthVO> health() {
         return Result.ok(healthService.check());

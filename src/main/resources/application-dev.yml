@@ -33,7 +33,9 @@ spring:
 
 mybatis-plus:
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 用 Slf4jImpl 而不是 StdOutImpl：后者直接 System.out，不经过 Logback，
+    # 所以日志文件里没有 SQL，也没有 traceId 前缀，排查"某个请求发了什么 SQL"时基本没用。
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 logging:
   level:

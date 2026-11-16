@@ -10,6 +10,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -48,10 +50,29 @@ public class GlobalExceptionHandler {
         return build(ResultCode.BAD_REQUEST, "请求体格式错误");
     }
 
+    /** 路径变量类型不对，比如 /v1/projects/abc。不处理会掉进兜底变 500，看起来像服务挂了。 */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Result<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return build(ResultCode.BAD_REQUEST, "参数格式错误: " + e.getName());
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Result<Void>> handleNoResource(NoResourceFoundException e) {
         String path = e.getResourcePath();
         return build(ResultCode.NOT_FOUND, "接口不存在: " + (path.startsWith("/") ? path : "/" + path));
+    }
+
+    /**
+     * 上传超过容器上限（spring.servlet.multipart.max-*）。
+     *
+     * <p>不处理会掉进兜底变 500，前端只能提示"服务器错误"，用户根本不知道是文件太大。
+     * 应用层的业务上限（app.storage.*）在 FileServiceImpl 里先卡一次，
+     * 走到这里说明连容器那关都没过。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Result<Void>> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        log.warn("上传超过容器上限: {}", e.getMessage());
+        return build(ResultCode.FILE_TOO_LARGE, "上传文件过大，请压缩后重试");
     }
 
     /** 兜底：未预料到的异常只回通用文案，细节留在日志里，避免把堆栈暴露给调用方。 */
