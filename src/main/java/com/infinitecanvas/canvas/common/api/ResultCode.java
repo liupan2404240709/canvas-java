@@ -14,6 +14,9 @@ public enum ResultCode {
     UNAUTHORIZED(40100, "未登录或登录已过期", 401),
     FORBIDDEN(40300, "没有访问权限", 403),
     NOT_FOUND(40400, "资源不存在", 404),
+    // 路径匹配上了但方法不对（比如把 POST 打到只有 GET 的地址）单独给 405：
+    // 以前这种情况掉进兜底变 500，看起来像服务挂了，实际只是接口调错了
+    METHOD_NOT_ALLOWED(40500, "请求方法不支持", 405),
     CONFLICT(40900, "资源状态冲突", 409),
     TOO_MANY_REQUESTS(42900, "请求过于频繁", 429),
     INTERNAL_ERROR(50000, "服务暂时不可用", 500),

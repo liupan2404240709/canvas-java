@@ -11,7 +11,10 @@
                f.mime_type, f.extension, f.bytes, f.width, f.height, f.biz_type, f.created_at
         FROM t_file f
         WHERE f.user_id = #{userId}
-          AND f.created_at &lt; #{before}
+          <!-- 用 &lt;= 而不是 &lt;：created_at 是秒级 DATETIME，宽限期设 0 时
+               before 就是"现在"，用严格小于会漏掉同一秒创建的文件，
+               表现为"刚上传的孤儿怎么清都清不掉" -->
+          AND f.created_at &lt;= #{before}
           AND NOT EXISTS (SELECT 1 FROM t_asset a WHERE a.file_id = f.id)
         ORDER BY f.id
         LIMIT #{limit}

@@ -44,7 +44,9 @@ springdoc:
 app:
   version: 0.0.1
   cors:
-    allowed-origins: http://localhost:5173,http://localhost:4173
+    # 3000 是前端 vite 的端口（package.json 里 dev 脚本），
+    # 5173 是 vite 默认端口，4173 是 vite preview。阶段 9 接前端时不用再改配置。
+    allowed-origins: http://localhost:3000,http://localhost:5173,http://localhost:4173
   # JWT 配置。secret 必须 >= 32 字节（HS256 的最低密钥长度），
   # 长度不够 Jwts.hmacShaKeyFor 会在启动时直接抛 WeakKeyException，属于"早点炸比线上炸好"。
   jwt:

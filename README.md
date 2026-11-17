@@ -30,18 +30,20 @@ canvas-java/
     │   ├── security/            # JWT、过滤器、登录保护（阶段 1）
     │   ├── controller/          # 只做参数接收与结果组装
     │   ├── service/             # 业务逻辑（接口 + impl）
-    │   ├── mapper/              # MyBatis-Plus Mapper（阶段 1 用户 / 阶段 2 画布）
+    │   ├── mapper/              # MyBatis-Plus Mapper（用户 / 画布 / 文件 / 素材）
     │   ├── entity/              # 与表一一对应
     │   ├── dto/                 # 入参
     │   ├── vo/                  # 出参
-    │   └── infra/               # 过滤器等基础设施
+    │   └── infra/               # 基础设施：traceId 过滤器、文件存储抽象（阶段 3）
     └── resources
         ├── application.yml      # 公共配置
         ├── application-dev.yml  # 本地连接信息
         ├── db/schema.sql        # 建表脚本（启动自动执行）
-        ├── mapper/*.xml         # 批量插入、回收站等手写 SQL
+        ├── mapper/*.xml         # 批量插入、回收站、标签聚合等手写 SQL
         └── logback-spring.xml   # 日志（含 traceId）
 ```
+
+上传的文件默认落在 `data/uploads/`（已被 `.gitignore` 忽略）。
 
 ## 快速开始
 
@@ -72,15 +74,25 @@ curl http://127.0.0.1:8081/api/v1/health
 库 `infinite_canvas` 由 compose 自动创建，账号 `root/root`，与 `application-dev.yml` 一致，无需手动建库。
 
 - 接口文档：http://127.0.0.1:8081/api/swagger-ui.html
+- **可视化控制台**：http://127.0.0.1:8081/api/demo （登录/画布/素材/接口流水，同源部署不需要额外起前端）
 - 日志文件：`logs/canvas-server.log`
+
+## 关于前端
+
+前端 `infinite-canvas-main/web` **现在还接不上**，这不是配置问题：它从设计上就是纯浏览器应用——画布和素材存在 IndexedDB（`localforage`），模型直连三方接口，`useUserStore` 里没有登录态。要对接得先给它补一层 API 客户端、登录页和 store 改造，属于阶段 9。
+
+在此之前，用上面的可视化控制台看后端效果；缺口清单和对接计划见 `docs/frontend-integration.md`。
 
 ## 文档
 
 阶段说明、设计文档、接口文档在本工程的 `docs/` 目录：
 
+- **`database.md`：数据库表结构总说明（跨阶段统一）**——6 张表逐字段用途、表间关系、索引设计与执行路径、已知问题
 - `plan.md`：整体改写规划与进度
+- `frontend-integration.md`：前端为什么现在还接不上、缺口清单、阶段 9 对接计划
 - `stage-00-scaffold/`：阶段 0（环境与骨架）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
 - `stage-01-auth/`：阶段 1（账号体系）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
 - `stage-02-canvas/`：阶段 2（画布项目）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
+- `stage-03-media/`：阶段 3（文件与素材库）的说明 / 设计 / 接口文档 + `tech/` 12 篇代码技术说明
 
 > 本工程独立于前端仓库 `infinite-canvas-main`，两者平级放在 `D:\project\` 下。

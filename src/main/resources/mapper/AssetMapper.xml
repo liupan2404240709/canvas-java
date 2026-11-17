@@ -2,6 +2,18 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.infinitecanvas.canvas.mapper.AssetMapper">
 
+    <!-- 显式声明构造器映射。
+         TagCountVO 是 record，没有无参构造器。MyBatis 虽然能在编译带 -parameters 时
+         按参数名自动映射构造器，但那是"依赖编译选项的隐式行为"——
+         哪天有人改了 pom 的 compiler 配置，这里就会静默变成全 null。
+         写死 <constructor> 只多 4 行，换来的是不依赖任何编译期约定。 -->
+    <resultMap id="tagCountMap" type="com.infinitecanvas.canvas.vo.TagCountVO">
+        <constructor>
+            <arg column="tag" javaType="java.lang.String"/>
+            <arg column="count" javaType="java.lang.Integer"/>
+        </constructor>
+    </resultMap>
+
     <!-- 标签聚合。
          JSON_TABLE 是 MySQL 8 才有的"把 JSON 数组展开成行"的表函数：
            ["人像","暖色"]  →  两行 (人像) (暖色)
@@ -12,7 +24,7 @@
          2. 这个项目没有"按标签反查素材总数做分页"的性能压力，
             JSON_CONTAINS 在小数据量下够用。
          如果哪天标签要做成独立实体（重命名、颜色、排序），就应该拆表。 -->
-    <select id="selectTagCounts" resultType="com.infinitecanvas.canvas.vo.TagCountVO">
+    <select id="selectTagCounts" resultMap="tagCountMap">
         SELECT jt.tag AS tag, COUNT(*) AS `count`
         FROM t_asset a
                  JOIN JSON_TABLE (a.tags_json, '$[*]' COLUMNS (tag VARCHAR(64) PATH '$')) jt

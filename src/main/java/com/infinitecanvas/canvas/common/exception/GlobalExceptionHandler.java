@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -54,6 +55,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Result<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
         return build(ResultCode.BAD_REQUEST, "参数格式错误: " + e.getName());
+    }
+
+    /**
+     * 方法不支持。典型场景：把 POST 打到一个只注册了 GET 的路径上
+     * （例如漏写 {@code @PostMapping("/upload")} 的前缀时，
+     * {@code POST /v1/files/upload} 会匹配到 {@code GET /v1/files/{id}} 的模式上）。
+     * 不单独处理的话会被兜底成 500，排查时容易误判为服务端崩溃。
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Result<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        log.warn("请求方法不支持: {}，该路径支持 {}", e.getMethod(), e.getSupportedMethods());
+        return build(ResultCode.METHOD_NOT_ALLOWED,
+                "请求方法不支持: " + e.getMethod() + "（该路径只接受 "
+                        + String.join("/", e.getSupportedMethods() == null ? new String[]{"?"} : e.getSupportedMethods())
+                        + "）");
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

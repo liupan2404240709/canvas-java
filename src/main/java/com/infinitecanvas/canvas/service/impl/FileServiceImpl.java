@@ -54,6 +54,9 @@ public class FileServiceImpl implements FileService {
     /** 单次清理最多处理多少条，避免一次请求卡太久；返回的 hasMore 告诉前端还能不能再调。 */
     private static final int CLEANUP_BATCH = 500;
 
+    /** 默认宽限期 24 小时：刚上传、还没来得及建素材的文件不能被扫走。 */
+    private static final int DEFAULT_GRACE_MINUTES = 24 * 60;
+
     private static final int BUFFER_SIZE = 64 * 1024;
 
     private static final Set<String> BIZ_TYPES = Set.of("asset", "canvas", "avatar");
@@ -179,7 +182,11 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public CleanupResultVO cleanupOrphans(Long userId, int graceMinutes) {
-        int safeGrace = graceMinutes <= 0 ? 24 * 60 : graceMinutes;
+        // 契约：graceMinutes=0 表示"不设宽限期"，用于手动强制清理；
+        // 只有负数（无意义的值）才回落到默认 24 小时。
+        // 早先这里写成 graceMinutes <= 0 就取默认值，结果传 0 永远清不掉东西，
+        // 和文档写的"传 0 可强制"正好相反——接口参数和实现语义不一致是最难查的一类 bug。
+        int safeGrace = graceMinutes < 0 ? DEFAULT_GRACE_MINUTES : graceMinutes;
         LocalDateTime before = LocalDateTime.now().minusMinutes(safeGrace);
 
         var orphans = fileRecordMapper.selectOrphans(userId, before, CLEANUP_BATCH);

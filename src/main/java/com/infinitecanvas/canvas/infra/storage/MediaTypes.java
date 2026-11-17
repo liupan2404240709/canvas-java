@@ -81,7 +81,7 @@ public final class MediaTypes {
         }
         mime = ALIASES.getOrDefault(mime, mime);
         if (mime.isEmpty()) {
-            mime = MIME_BY_EXTENSION.getOrDefault(extensionOf(fileName), "");
+            mime = MIME_BY_EXTENSION.getOrDefault(extensionFromName(fileName), "");
         }
         return mime;
     }
@@ -147,7 +147,7 @@ public final class MediaTypes {
         };
     }
 
-    private static String extensionOf(String fileName) {
+    private static String extensionFromName(String fileName) {
         if (fileName == null) {
             return "";
         }

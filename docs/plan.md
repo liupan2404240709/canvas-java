@@ -9,13 +9,15 @@
 | 0 环境与骨架 | ✅ 已完成并通过本机实测 | `canvas-java/` | [stage-00-scaffold](./stage-00-scaffold/README.md)（[设计](./stage-00-scaffold/design.md) / [接口](./stage-00-scaffold/api.md) / [**代码技术说明 12 篇**](./stage-00-scaffold/tech/README.md)） |
 | 1 账号体系 | ✅ 已完成并通过本机全链路实测 | `src/main/java/.../security/`、`service/impl/AuthServiceImpl` | [stage-01-auth](./stage-01-auth/README.md)（[设计](./stage-01-auth/design.md) / [接口](./stage-01-auth/api.md) / [**代码技术说明 12 篇**](./stage-01-auth/tech/README.md)） |
 | 2 画布项目 | ✅ 已完成并通过本机全链路实测（含并发保存） | `service/impl/CanvasProjectServiceImpl`、`entity/Canvas*`、`mapper/Canvas*` | [stage-02-canvas](./stage-02-canvas/README.md)（[设计](./stage-02-canvas/design.md) / [接口](./stage-02-canvas/api.md) / [**代码技术说明 12 篇**](./stage-02-canvas/tech/README.md)） |
-| 3 文件与素材库 | 待开始 | — | — |
+| 3 文件与素材库 | ✅ 已完成并通过本机全链路实测（12 组断言） | `infra/storage/`、`service/impl/FileServiceImpl`、`AssetServiceImpl`、`controller/MediaController`、`static/demo/` | [stage-03-media](./stage-03-media/README.md)（[设计](./stage-03-media/design.md) / [接口](./stage-03-media/api.md) / [**代码技术说明 12 篇**](./stage-03-media/tech/README.md)） |
 | 4 提示词库 | 待开始 | — | — |
 | 5 渠道与模型配置 | 待开始 | — | — |
 | 6 生成任务 | 待开始 | — | — |
 | 7 对话助手 | 待开始 | — | — |
 | 8 工程化与部署 | 待开始 | — | — |
 | 9 前端对接 | 待开始 | — | — |
+
+> 📊 **数据库表结构总说明**：[`database.md`](./database.md)——跨阶段统一维护，6 张表逐字段用途、表间关系、索引设计与执行路径。新增表时按同样格式追加一节。
 
 ## 一、先看清现状：这个项目的"后端"到底是什么
 

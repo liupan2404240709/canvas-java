@@ -50,6 +50,11 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
+            // 可视化控制台（resources/static/demo 下的纯静态页）。
+            // 页面本身不含数据，数据全靠带 token 的业务接口拉，所以放开访问没有风险。
+            "/demo",
+            "/demo/**",
+            "/favicon.ico",
             // Spring Boot 自己的错误转发路径，不放开会把 404 变成 401
             "/error"
     };

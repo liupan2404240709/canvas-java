@@ -5,16 +5,23 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * 前后端分离开发期的跨域放行 + 上传文件的静态映射。
+ * 跨域放行 + 控制台入口重定向。
  *
- * <p>静态映射这块要注意：{@code ResourceHandler} 匹配的是 **servlet path**，
- * 所以这里写 {@code /media/**}，而浏览器实际访问 {@code /api/media/**}
- * （{@code /api} 是 context-path，不参与匹配）。
- * 和 Security 放行路径一样，最容易踩的坑就是把 context-path 也写进去。
+ * <p>这里曾经还有一个 {@code addResourceHandlers}，把上传目录直接映射成静态资源
+ * （{@code /media/**} 读磁盘，零开销）。阶段 3 实测后改掉了，原因是 Content-Type：
+ * 文件名是 sha256、没有扩展名，ResourceHandler 推断不出类型，一律返回
+ * {@code application/octet-stream}；配上 Spring Security 默认的
+ * {@code X-Content-Type-Options: nosniff}，浏览器会拒绝把它当图片渲染，页面上一片破图。
+ *
+ * <p>现在改由 {@code MediaController} 提供 {@code /media/**}：从 {@code t_file.mime_type}
+ * 拿真实类型，顺带白得 Range 支持（{@code <video>} 拖进度条要用）。
+ *
+ * <p>仍然保留 {@code @EnableConfigurationProperties}：{@link StorageProperties}
+ * 本身没有 {@code @Component}，是这里把它注册成 Bean 的。
  */
 @Configuration
 @EnableConfigurationProperties(StorageProperties.class)
@@ -22,12 +29,6 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Value("${app.cors.allowed-origins}")
     private String[] allowedOrigins;
-
-    private final StorageProperties storageProperties;
-
-    public WebMvcConfig(StorageProperties storageProperties) {
-        this.storageProperties = storageProperties;
-    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
@@ -41,23 +42,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
     }
 
     /**
-     * 把磁盘目录映射成静态资源。
+     * 让 /api/demo 和 /api/demo/ 都能进控制台，不用记 index.html。
      *
-     * <p>为什么需要它：{@code <img src>} / {@code <video src>} 不会带 Authorization 头，
-     * 走不了 {@code /v1/files/{id}/content} 这种鉴权接口。文件本身是内容寻址的
-     * （路径就是 sha256），不可枚举，所以这里放开只读访问是可接受的。
-     * 生产环境更稳的做法是对象存储私有桶 + 预签名 URL，有效期几分钟，泄露了也很快失效。
+     * <p>redirect 的目标写 servlet path（不带 context-path），浏览器会基于当前地址自动补上 /api。
      */
     @Override
-    public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        String location = storageProperties.rootPath().toUri().toString();
-        if (!location.endsWith("/")) {
-            // ResourceHandler 要求 location 以 / 结尾，否则会当成"父目录"处理
-            location = location + "/";
-        }
-        registry.addResourceHandler(storageProperties.getPublicPrefix() + "/**")
-                .addResourceLocations(location)
-                // 内容寻址 = 同一路径的字节永不变，放心让浏览器缓存一天
-                .setCachePeriod(86400);
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addRedirectViewController("/demo", "/demo/index.html");
+        registry.addRedirectViewController("/demo/", "/demo/index.html");
     }
 }
