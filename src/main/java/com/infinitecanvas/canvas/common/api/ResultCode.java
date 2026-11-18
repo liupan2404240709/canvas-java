@@ -54,7 +54,21 @@ public enum ResultCode {
     ASSET_NOT_FOUND(40431, "素材不存在或已被删除", 404),
 
     // ---- 文件与素材 409xx：文件还被引用，不能删 ----
-    FILE_IN_USE(40930, "文件已被素材引用，请先删除对应素材", 409);
+    FILE_IN_USE(40930, "文件已被素材引用，请先删除对应素材", 409),
+
+    // ---- 提示词库 400xx：源地址不合法 ----
+    PROMPT_SOURCE_URL_INVALID(40040, "源地址必须是 http/https 的 JSON 地址", 400),
+
+    // ---- 提示词库 404xx ----
+    PROMPT_SOURCE_NOT_FOUND(40440, "提示词源不存在或已被删除", 404),
+
+    // ---- 提示词库 409xx ----
+    PROMPT_SOURCE_NAME_TAKEN(40940, "同名提示词源已存在", 409),
+    PROMPT_SOURCE_READ_ONLY(40941, "内置源不能修改地址或删除，只能停用", 409),
+
+    // ---- 提示词库 429xx：同一源正在同步 ----
+    // 不排队等待：同步是用户手动触发的重操作，直接告诉他"正在同步"比让他干等 30 秒更好
+    PROMPT_SOURCE_BUSY(42920, "该源正在同步中，请稍后再试", 429);
 
     private final int code;
     private final String message;

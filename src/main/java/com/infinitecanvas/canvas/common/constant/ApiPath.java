@@ -18,6 +18,12 @@ public final class ApiPath {
 
     public static final String ASSETS = V1 + "/assets";
 
+    /** 提示词查询（跨源聚合，对应前端 prompts 页的列表）。 */
+    public static final String PROMPTS = V1 + "/prompts";
+
+    /** 提示词源管理（CRUD + 同步）。 */
+    public static final String PROMPT_SOURCES = V1 + "/prompt-sources";
+
     /**
      * 静态资源映射前缀。注意它**不经过 controller**，而是由 WebMvcConfig 的
      * ResourceHandler 直接读磁盘，所以路径里不带 /v1。

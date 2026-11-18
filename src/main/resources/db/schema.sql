@@ -152,3 +152,75 @@ CREATE TABLE IF NOT EXISTS t_asset
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_0900_ai_ci COMMENT ='素材表';
+
+-- 阶段 4：提示词库
+-- 设计要点：
+-- 1. 源和提示词是"父表 + 附属数据"的关系，提示词没有独立接口，只能通过刷新源写入；
+-- 2. 源用 source_key 做业务键（内置源直接用 registry 里的 id，自定义源生成 src_xxx），
+--    和 t_canvas_node.node_key 是同一个思路：数据库主键每次重建都可能变，对外只认业务键；
+-- 3. t_prompt 没有 deleted：它没有"单条删除"的业务语义，整源同步时差量删除就够了；
+--    源被删除时提示词随源一起物理删除（在同一个事务里）；
+-- 4. content_sha256 / etag / last_modified 是"幂等同步"的依据：
+--    内容没变就不写库，避免每 30 分钟把几千行删了重插一遍。
+CREATE TABLE IF NOT EXISTS t_prompt_source
+(
+    id                       BIGINT        NOT NULL COMMENT '主键，MyBatis-Plus 雪花 ID',
+    user_id                  BIGINT        NOT NULL COMMENT '归属用户',
+    source_key               VARCHAR(64)   NOT NULL COMMENT '业务键，对外就是 sourceId；内置源用 registry id',
+    name                     VARCHAR(100)  NOT NULL COMMENT '源名称，同时作为提示词的 category',
+    url                      VARCHAR(1024) NOT NULL COMMENT 'JSON 地址（http/https）',
+    homepage                 VARCHAR(1024) DEFAULT NULL COMMENT '主页，用于 githubUrl 兜底',
+    enabled                  TINYINT       NOT NULL DEFAULT 1 COMMENT '0=停用，停用后不参与同步也不出现在列表',
+    built_in                 TINYINT       NOT NULL DEFAULT 0 COMMENT '1=内置源，不可删除、不可改地址',
+    refresh_interval_minutes INT           NOT NULL DEFAULT 30 COMMENT '刷新间隔（分钟），0=只手动刷新',
+    prompt_count             INT           NOT NULL DEFAULT 0 COMMENT '上次同步后的条数',
+    content_sha256           CHAR(64)      DEFAULT NULL COMMENT '上次成功同步的内容摘要，相同则跳过写库',
+    etag                     VARCHAR(128)  DEFAULT NULL COMMENT 'HTTP ETag，用于 If-None-Match 条件请求',
+    last_modified            VARCHAR(64)   DEFAULT NULL COMMENT 'HTTP Last-Modified 原文，用于 If-Modified-Since',
+    last_fetched_at          DATETIME      DEFAULT NULL COMMENT '最近一次尝试同步时间（成功失败都写）',
+    last_success_at          DATETIME      DEFAULT NULL COMMENT '最近一次成功同步时间',
+    last_error               VARCHAR(500)  DEFAULT NULL COMMENT '最近一次失败原因，成功后清空',
+    created_at               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted                  TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0=未删 1=已删',
+    PRIMARY KEY (id),
+    -- 同一用户下 source_key 唯一：内置源播种时靠它做幂等的 INSERT 判定
+    UNIQUE KEY uk_prompt_source_user_key (user_id, source_key),
+    -- 调度扫描："到期的、启用的源"。deleted 放中间是因为它是等值条件，
+    -- last_fetched_at 是范围条件，必须排在后面
+    KEY idx_prompt_source_due (enabled, deleted, last_fetched_at)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_0900_ai_ci COMMENT ='提示词源表';
+
+CREATE TABLE IF NOT EXISTS t_prompt
+(
+    id                    BIGINT        NOT NULL COMMENT '主键，MyBatis-Plus 雪花 ID',
+    user_id               BIGINT        NOT NULL COMMENT '归属用户，冗余自源，列表查询不用 join',
+    source_id             BIGINT        NOT NULL COMMENT '所属源 t_prompt_source.id',
+    prompt_key            VARCHAR(128)  NOT NULL COMMENT '源内 id，对外就是 Prompt.id',
+    title                 VARCHAR(300)  NOT NULL COMMENT '标题',
+    prompt                MEDIUMTEXT    NOT NULL COMMENT '提示词正文',
+    description           VARCHAR(1000) DEFAULT NULL COMMENT '说明',
+    cover_url             VARCHAR(1024) DEFAULT NULL COMMENT '封面，缺失时取第一张参考图',
+    reference_image_urls  JSON          DEFAULT NULL COMMENT '参考图数组',
+    tags_json             JSON          DEFAULT NULL COMMENT '标签数组，JSON_CONTAINS 过滤',
+    preview               VARCHAR(2000) DEFAULT NULL COMMENT '预览文本（部分源提供）',
+    author                VARCHAR(200)  DEFAULT NULL COMMENT '作者',
+    source_url            VARCHAR(1024) DEFAULT NULL COMMENT '该条的原始链接',
+    image_mode            VARCHAR(64)   DEFAULT NULL COMMENT '推荐图片模式',
+    image_model           VARCHAR(128)  DEFAULT NULL COMMENT '推荐模型',
+    image_size            VARCHAR(64)   DEFAULT NULL COMMENT '推荐尺寸',
+    image_count           INT           DEFAULT NULL COMMENT '推荐张数',
+    sort_index            INT           NOT NULL DEFAULT 0 COMMENT '在源 JSON 里的下标，用于保持源的策展顺序',
+    remote_created_at     DATETIME      DEFAULT NULL COMMENT '源里的 createdAt，解析失败为空',
+    remote_updated_at     DATETIME      DEFAULT NULL COMMENT '源里的 updatedAt，解析失败为空',
+    created_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次入库时间，重复同步不变',
+    PRIMARY KEY (id),
+    -- 幂等同步的关键：同一源内 prompt_key 唯一，重复同步走 ON DUPLICATE KEY UPDATE
+    UNIQUE KEY uk_prompt_source_key (source_id, prompt_key),
+    -- 列表查询：按源分组 + 源内顺序；source_id 是等值/范围条件，sort_index 提供排序
+    KEY idx_prompt_user_source_order (user_id, source_id, sort_index)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_0900_ai_ci COMMENT ='提示词表';

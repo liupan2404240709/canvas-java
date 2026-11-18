@@ -66,6 +66,19 @@ app:
     max-image-size: 20MB
     max-video-size: 100MB
     max-audio-size: 20MB
+  # 提示词库同步。扫描间隔和"每个源刷多勤"是两件事：
+  # scan-cron 决定多久扫一次，refresh_interval_minutes 决定扫到之后刷不刷。
+  prompt:
+    scan-cron: "0 */5 * * * *"
+    connect-timeout: 5s
+    read-timeout: 20s
+    max-response-size: 8MB
+    tag-cache-ttl: 5m
+    tag-facet-limit: 100
+    schedule-batch: 20
+    # 安全开关：允许请求内网/回环地址。本地开发要 true（e2e 用本机的样例 JSON 做同步），
+    # 一旦这个服务对外暴露就必须改成 false，否则等于给别人开了一个内网探测接口
+    allow-private-host: true
 
 logging:
   level:
