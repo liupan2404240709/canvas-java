@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infinitecanvas.canvas.mapper.PromptSourceMapper">
+
+    <!-- 后台调度扫描。
+         三个条件缺一不可：
+         1. deleted = 0：逻辑删除的源不该再被拉取；
+         2. enabled = 1：用户停用的源不参与同步（但数据保留，重新启用后立刻可用）；
+         3. refresh_interval_minutes > 0：0 表示"只手动刷新"，不参加扫描。
+
+         last_fetched_at 用 <= 而不是 <：到期时刻正好相等时也应该刷，
+         秒级 DATETIME 下用严格小于会漏掉"刚好到点"的那一次。 -->
+    <select id="selectDueSources" resultType="com.infinitecanvas.canvas.entity.PromptSource">
+        SELECT *
+        FROM t_prompt_source
+        WHERE deleted = 0
+          AND enabled = 1
+          AND refresh_interval_minutes &gt; 0
+          AND (last_fetched_at IS NULL
+            OR last_fetched_at &lt;= DATE_SUB(NOW(), INTERVAL refresh_interval_minutes MINUTE))
+        ORDER BY last_fetched_at IS NOT NULL, last_fetched_at
+        LIMIT #{limit}
+    </select>
+
+</mapper>

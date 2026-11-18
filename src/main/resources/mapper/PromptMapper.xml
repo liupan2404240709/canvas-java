@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infinitecanvas.canvas.mapper.PromptMapper">
+
+    <!-- 批量 upsert。
+         为什么不用「删全部 + 批量插入」：
+         1. 每次同步都会换主键，列表分页的锚点会漂移，用户滚动时看到的内容会跳；
+         2. created_at 会被重置，丢了"这条什么时候入库的"这个信息；
+         3. 上千行的删+插会产生大量 undo/redo，长事务更容易撞锁等待。
+
+         MySQL 8.0.19 起推荐用行别名（AS new）而不是 VALUES(col)：
+         VALUES() 在 8.0.20 被标记为 deprecated，写法早晚要改，不如一开始就用新语法。 -->
+    <insert id="upsertBatch">
+        INSERT INTO t_prompt (id, user_id, source_id, prompt_key, title, prompt, description, cover_url,
+                              reference_image_urls, tags_json, preview, author, source_url, image_mode,
+                              image_model, image_size, image_count, sort_index, remote_created_at,
+                              remote_updated_at, created_at)
+        VALUES
+        <foreach collection="items" item="p" separator=",">
+            (#{p.id}, #{p.userId}, #{p.sourceId}, #{p.promptKey}, #{p.title}, #{p.prompt}, #{p.description},
+             #{p.coverUrl}, #{p.referenceImageUrls}, #{p.tagsJson}, #{p.preview}, #{p.author},
+             #{p.sourceUrl}, #{p.imageMode}, #{p.imageModel}, #{p.imageSize}, #{p.imageCount},
+             #{p.sortIndex}, #{p.remoteCreatedAt}, #{p.remoteUpdatedAt}, NOW())
+        </foreach>
+        AS new
+        ON DUPLICATE KEY UPDATE title                = new.title,
+                                prompt               = new.prompt,
+                                description          = new.description,
+                                cover_url            = new.cover_url,
+                                reference_image_urls = new.reference_image_urls,
+                                tags_json            = new.tags_json,
+                                preview              = new.preview,
+                                author               = new.author,
+                                source_url           = new.source_url,
+                                image_mode           = new.image_mode,
+                                image_model          = new.image_model,
+                                image_size           = new.image_size,
+                                image_count          = new.image_count,
+                                sort_index           = new.sort_index,
+                                remote_created_at    = new.remote_created_at,
+                                remote_updated_at    = new.remote_updated_at
+    </insert>
+
+    <!-- 差量删除：上游删掉的条目本地也要消失，否则用户会看到"源里已经不存在的提示词"。
+         不用 NOT EXISTS 关联子查询，是因为 keys 本来就在内存里（归一化结果），
+         直接拼 NOT IN 更直观；keys 数量是几百上千级别，远没到 MySQL 的解析上限。 -->
+    <delete id="deleteNotInKeys">
+        DELETE
+        FROM t_prompt
+        WHERE source_id = #{sourceId}
+        <if test="keys != null and keys.size() > 0">
+            AND prompt_key NOT IN
+            <foreach collection="keys" item="key" open="(" separator="," close=")">
+                #{key}
+            </foreach>
+        </if>
+    </delete>
+
+    <!-- 标签云：把 tags_json 数组炸成行再 distinct。
+         注意这里是「忽略标签筛选」的版本——前端的行为是：勾选标签后，左侧标签列表不变，
+         否则用户点了一个标签，其他标签就消失了，没法继续多选。
+         所以参数里没有 tag，只有 keyword 和源范围（sourceIds）。 -->
+    <select id="selectTagFacet" resultType="java.lang.String">
+        SELECT DISTINCT jt.tag
+        FROM t_prompt p
+        JOIN JSON_TABLE (p.tags_json, '$[*]' COLUMNS (tag VARCHAR(64) PATH '$')) jt
+        WHERE p.user_id = #{userId}
+        <if test="sourceIds != null and sourceIds.size() > 0">
+            AND p.source_id IN
+            <foreach collection="sourceIds" item="sid" open="(" separator="," close=")">
+                #{sid}
+            </foreach>
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (p.title LIKE CONCAT('%', #{keyword}, '%')
+                OR p.prompt LIKE CONCAT('%', #{keyword}, '%')
+                OR p.description LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY jt.tag
+        LIMIT #{limit}
+    </select>
+
+</mapper>
