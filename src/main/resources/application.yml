@@ -79,6 +79,21 @@ app:
     # 安全开关：允许请求内网/回环地址。本地开发要 true（e2e 用本机的样例 JSON 做同步），
     # 一旦这个服务对外暴露就必须改成 false，否则等于给别人开了一个内网探测接口
     allow-private-host: true
+  # 渠道 API Key 的加密密钥（阶段 5）。用 SHA-256 派生 32 字节 AES key，
+  # 所以这里不需要是 base64/hex，随便一串够长的随机字符就行——但必须够长，<16 直接拒绝启动。
+  # 换掉这个值会让所有已存的 Key 解不开（解不开时报 50010 让用户重填），这不是 bug，是"密钥即边界"。
+  crypto:
+    secret: canvas-dev-channel-secret-change-me-in-production-2026
+  # 渠道探测。超时比提示词同步短，因为这是"用户点一下在等结果"的交互式请求。
+  channel:
+    connect-timeout: 5s
+    read-timeout: 15s
+    # /models 正常只有几十 KB，1MB 已经极宽松
+    max-response-bytes: 1048576
+    max-models: 500
+    # 默认允许内网：http://127.0.0.1:11434/v1（本地 Ollama）是正当场景。
+    # 服务对外暴露时改成 false，出站前会拒绝回环/内网 IP。
+    allow-private-host: true
 
 logging:
   level:

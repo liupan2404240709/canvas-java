@@ -68,7 +68,21 @@ public enum ResultCode {
 
     // ---- 提示词库 429xx：同一源正在同步 ----
     // 不排队等待：同步是用户手动触发的重操作，直接告诉他"正在同步"比让他干等 30 秒更好
-    PROMPT_SOURCE_BUSY(42920, "该源正在同步中，请稍后再试", 429);
+    PROMPT_SOURCE_BUSY(42920, "该源正在同步中，请稍后再试", 429),
+
+    // ---- 渠道与模型 400xx：配置不合法 ----
+    // 地址单独一个码：Base URL 写错是最常见的配置错误，前端要能高亮那个输入框
+    CHANNEL_BASE_URL_INVALID(40050, "接口地址必须是 http/https 地址", 400),
+    CHANNEL_API_KEY_REQUIRED(40051, "API Key 不能为空", 400),
+    CHANNEL_CAPABILITY_INVALID(40052, "模型能力只能是 image / video / text / audio", 400),
+
+    // ---- 渠道与模型 404xx ----
+    CHANNEL_NOT_FOUND(40450, "渠道不存在或已被删除", 404),
+
+    // ---- 渠道与模型 500xx：密钥解密失败 ----
+    // 换了 app.crypto.secret 之后，老密文就解不开了。这不是"服务挂了"，
+    // 而是"这行数据要重新填 Key"，给一个明确的码让前端提示用户重填，而不是 500 笼统报错
+    SECRET_DECRYPT_FAILED(50010, "API Key 解密失败，可能是服务端加密密钥已更换，请重新填写", 500);
 
     private final int code;
     private final String message;

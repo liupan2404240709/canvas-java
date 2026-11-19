@@ -11,13 +11,13 @@
 | 2 画布项目 | ✅ 已完成并通过本机全链路实测（含并发保存） | `service/impl/CanvasProjectServiceImpl`、`entity/Canvas*`、`mapper/Canvas*` | [stage-02-canvas](./stage-02-canvas/README.md)（[设计](./stage-02-canvas/design.md) / [接口](./stage-02-canvas/api.md) / [**代码技术说明 12 篇**](./stage-02-canvas/tech/README.md)） |
 | 3 文件与素材库 | ✅ 已完成并通过本机全链路实测（12 组断言） | `infra/storage/`、`service/impl/FileServiceImpl`、`AssetServiceImpl`、`controller/MediaController`、`static/demo/` | [stage-03-media](./stage-03-media/README.md)（[设计](./stage-03-media/design.md) / [接口](./stage-03-media/api.md) / [**代码技术说明 12 篇**](./stage-03-media/tech/README.md)） |
 | 4 提示词库 | ✅ 代码完成、编译通过（e2e 待跑） | `infra/prompt/`、`infra/lock/RedisLock`、`service/impl/PromptServiceImpl`、`PromptSourceServiceImpl`、`scheduler/PromptRefreshScheduler` | [stage-04-prompts](./stage-04-prompts/README.md)（[设计](./stage-04-prompts/design.md) / [接口](./stage-04-prompts/api.md) / [**代码技术说明 12 篇**](./stage-04-prompts/tech/README.md)） |
-| 5 渠道与模型配置 | 待开始 | — | — |
+| 5 渠道与模型配置 | ✅ 代码完成、编译通过（e2e 待跑） | `infra/crypto/SecretCipher`、`infra/channel/`、`infra/net/OutboundHosts`、`service/impl/ChannelServiceImpl` | [stage-05-channels](./stage-05-channels/README.md)（[设计](./stage-05-channels/design.md) / [接口](./stage-05-channels/api.md) / [**代码技术说明 12 篇**](./stage-05-channels/tech/README.md)） |
 | 6 生成任务 | 待开始 | — | — |
 | 7 对话助手 | 待开始 | — | — |
 | 8 工程化与部署 | 待开始 | — | — |
 | 9 前端对接 | 待开始 | — | — |
 
-> 📊 **数据库表结构总说明**：[`database.md`](./database.md)——跨阶段统一维护，8 张表逐字段用途、表间关系、索引设计与执行路径。新增表时按同样格式追加一节。
+> 📊 **数据库表结构总说明**：[`database.md`](./database.md)——跨阶段统一维护，10 张表逐字段用途、表间关系、索引设计与执行路径。新增表时按同样格式追加一节。
 
 ## 一、先看清现状：这个项目的"后端"到底是什么
 

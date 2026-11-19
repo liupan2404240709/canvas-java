@@ -475,6 +475,11 @@ input, textarea, select { font: inherit; }
 
 /* ---------- 提示词库 ---------- */
 .prompt-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }
+/* 渠道表单：两列自适应，窄屏自动叠成一列 */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.form-grid label, .form-wide { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--text-dim); }
+.form-grid .input, .form-wide .input { width: 100%; box-sizing: border-box; }
+.form-wide { margin-top: 10px; }
 .prompt-sources { display: flex; flex-direction: column; gap: 8px; }
 .src-card { padding: 11px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; transition: .18s; }
 .src-card:hover { border-color: var(--line-strong); }
@@ -577,6 +582,11 @@ input, textarea, select { font: inherit; }
                 提示词库
                 <span class="badge" id="navPrompts">0</span>
             </button>
+            <button class="nav-item" data-view="channels">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+                渠道与模型
+                <span class="badge" id="navChannels">0</span>
+            </button>
             <button class="nav-item" data-view="logs">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M4 12h10M4 19h13"/></svg>
                 接口流水
@@ -591,7 +601,7 @@ input, textarea, select { font: inherit; }
                 <div><b>2 画布</b><i>完成</i></div>
                 <div><b>3 素材</b><i>完成</i></div>
                 <div><b>4 提示词</b><i>完成</i></div>
-                <div><b>5 渠道</b><i class="todo">待做</i></div>
+                <div><b>5 渠道</b><i>完成</i></div>
                 <div><b>6 生成</b><i class="todo">待做</i></div>
             </div>
             <a class="side-link" id="swaggerLink" href="#" target="_blank" rel="noreferrer">打开 Swagger</a>
@@ -700,6 +710,53 @@ input, textarea, select { font: inherit; }
                         <div class="chips" id="promptCats"></div>
                         <div class="chips" id="promptTags"></div>
                         <div class="prompt-grid" id="promptGrid"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 渠道与模型 -->
+            <section class="view hidden" id="view-channels">
+                <div class="toolbar">
+                    <button class="btn primary" id="newChannelBtn" type="button">新建渠道</button>
+                    <select class="input" id="presetSelect" style="min-width:190px">
+                        <option value="">从国产厂商预设开始…</option>
+                    </select>
+                    <span class="chip" id="channelCount">0 个渠道</span>
+                    <span class="chip" id="modelCount">0 个可用模型</span>
+                </div>
+
+                <div class="card hidden" id="channelForm">
+                    <div class="card-head">
+                        <h3>新建渠道</h3>
+                        <span class="chip">Key 会先 AES-GCM 加密再落库，响应里只回脱敏结果</span>
+                    </div>
+                    <div class="form-grid">
+                        <label>显示名<input class="input" id="cfName" placeholder="留空自动取主机名"></label>
+                        <label>Base URL<input class="input" id="cfBaseUrl" placeholder="https://api.siliconflow.cn/v1"></label>
+                        <label>API Key<input class="input" id="cfApiKey" type="password" placeholder="sk-..."></label>
+                        <label>协议
+                            <select class="input" id="cfFormat">
+                                <option value="openai">openai</option>
+                                <option value="gemini">gemini</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="form-wide">模型（逗号或换行分隔，留空则从探测结果自动填）
+                        <textarea class="input" id="cfModels" rows="2" placeholder="qwen-image-3.0, qwen-max"></textarea>
+                    </label>
+                    <div class="toolbar" style="margin-top:10px">
+                        <button class="btn" id="cfProbe" type="button">探测（先测再存）</button>
+                        <button class="btn primary" id="cfSave" type="button">保存</button>
+                        <button class="btn ghost" id="cfCancel" type="button">取消</button>
+                        <span class="chip" id="cfStatus">未探测</span>
+                    </div>
+                </div>
+
+                <div class="prompt-layout">
+                    <div class="prompt-sources" id="channelList"></div>
+                    <div class="prompt-main">
+                        <div class="chips" id="modelChips"></div>
+                        <div class="prompt-sources" id="modelList"></div>
                     </div>
                 </div>
             </section>

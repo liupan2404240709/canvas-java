@@ -1,9 +1,9 @@
 package com.infinitecanvas.canvas.infra.prompt;
 
-import java.net.InetAddress;
+import com.infinitecanvas.canvas.infra.net.OutboundHosts;
+
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.UnknownHostException;
 import java.util.Locale;
 
 /**
@@ -45,31 +45,12 @@ public final class PromptUrls {
     /**
      * 主机是否允许访问。{@code allowPrivate=false} 时拒绝一切非公网地址。
      *
-     * <p>注意这是"请求发出前"的检查，挡不住 DNS rebinding（解析时是公网 IP、真正连接时变内网）。
-     * 要做到那种程度得在连接层固定 IP，属于生产级网关的活，这里只做基础防护。
+     * <p>实现已抽到 {@link OutboundHosts}——渠道探测要用同一段逻辑，但策略相反
+     * （它默认允许内网，因为本地 Ollama 是正当用法）。保留这个门面方法是为了让
+     * 阶段 4 的调用点一行都不用改。
      */
     public static boolean hostAllowed(URI uri, boolean allowPrivate) {
-        if (allowPrivate) {
-            return true;
-        }
-        String host = uri.getHost();
-        if (host == null) {
-            return false;
-        }
-        try {
-            for (InetAddress address : InetAddress.getAllByName(host)) {
-                if (address.isLoopbackAddress()
-                        || address.isSiteLocalAddress()
-                        || address.isLinkLocalAddress()
-                        || address.isAnyLocalAddress()
-                        || address.isMulticastAddress()) {
-                    return false;
-                }
-            }
-            return true;
-        } catch (UnknownHostException e) {
-            return false;
-        }
+        return OutboundHosts.allowed(uri, allowPrivate);
     }
 
     /**

@@ -224,3 +224,58 @@ CREATE TABLE IF NOT EXISTS t_prompt
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_0900_ai_ci COMMENT ='提示词表';
+
+-- ============================================================
+-- 阶段 5：渠道与模型配置
+-- 设计要点：
+-- 1. 渠道 = 一个 OpenAI 兼容端点 + 一把 API Key；模型是它的附属数据（随渠道整体保存）；
+-- 2. API Key 只存密文（AES-GCM），另存一份脱敏提示 api_key_hint 供列表页展示，
+--    这样列表接口不需要解密任何一行——"要不要看一眼明文"和"要不要列一遍渠道"是两件事；
+-- 3. api_key_cipher 故意不给默认值也不允许 NULL：写作"空密码"的渠道没有意义，
+--    建渠道时 Key 必填，修改时才允许留空表示"保持不变"；
+-- 4. t_channel_model 用独立的表而不是 JSON 列：阶段 6 要按 capability 查"我有哪些生图模型"，
+--    需要索引；而且模型能被单独启用/停用，有独立生命周期。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS t_channel
+(
+    id           BIGINT        NOT NULL COMMENT '主键，MyBatis-Plus 雪花 ID',
+    user_id      BIGINT        NOT NULL COMMENT '归属用户',
+    channel_key  VARCHAR(64)   NOT NULL COMMENT '业务键，对外就是 channelId；前端模型值 channelId::modelName 里用的就是它',
+    name         VARCHAR(100)  NOT NULL COMMENT '渠道显示名，用户可改',
+    base_url     VARCHAR(512)  NOT NULL COMMENT '接口根地址，如 https://dashscope.aliyuncs.com/compatible-mode/v1',
+    api_key_cipher VARCHAR(512) NOT NULL COMMENT 'AES-GCM 密文，格式 v1:<base64(iv||ciphertext||tag)>',
+    api_key_hint VARCHAR(32)   NOT NULL COMMENT '脱敏提示，如 sk-a****wxyz；仅用于展示，不可还原',
+    api_format   VARCHAR(16)   NOT NULL DEFAULT 'openai' COMMENT '接口协议：openai / gemini',
+    enabled      TINYINT       NOT NULL DEFAULT 1 COMMENT '0=停用，停用后模型不出现在可选列表',
+    sort_index   INT           NOT NULL DEFAULT 0 COMMENT '用户排序',
+    last_test_at DATETIME      DEFAULT NULL COMMENT '最近一次连通性测试时间',
+    last_test_ok TINYINT       DEFAULT NULL COMMENT '1=通过 0=失败 NULL=从未测过',
+    last_test_error VARCHAR(500) DEFAULT NULL COMMENT '最近一次测试失败原因（不含密钥、不含响应体全文）',
+    created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted      TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0=未删 1=已删',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_channel_user_key (user_id, channel_key),
+    KEY idx_channel_user_sort (user_id, deleted, sort_index)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_0900_ai_ci COMMENT ='模型渠道表';
+
+CREATE TABLE IF NOT EXISTS t_channel_model
+(
+    id          BIGINT       NOT NULL COMMENT '主键，MyBatis-Plus 雪花 ID',
+    user_id     BIGINT       NOT NULL COMMENT '归属用户，冗余自渠道，按能力查模型时不用 join',
+    channel_id  BIGINT       NOT NULL COMMENT '所属渠道 t_channel.id',
+    name        VARCHAR(128) NOT NULL COMMENT '模型名（上游原始 id，如 qwen-image-3.0），渠道内唯一',
+    capability  VARCHAR(16)  NOT NULL COMMENT '能力分类：image / video / text / audio',
+    script      MEDIUMTEXT   DEFAULT NULL COMMENT '自定义请求脚本（可选），空表示用内置调用逻辑',
+    enabled     TINYINT      NOT NULL DEFAULT 1 COMMENT '0=停用，不出现在可选列表',
+    sort_index  INT          NOT NULL DEFAULT 0 COMMENT '渠道内展示顺序',
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_channel_model_name (channel_id, name),
+    KEY idx_channel_model_user_cap (user_id, capability)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_0900_ai_ci COMMENT ='渠道模型表';

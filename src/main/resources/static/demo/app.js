@@ -28,6 +28,8 @@ const state = {
     tag: "",
     keyword: "",
     prompts: { items: [], total: 0, tags: [], categories: [], sources: [], keyword: "", category: "all", tag: "" },
+    // 渠道：list 是渠道（含各自模型），models 是跨渠道拍平后的可用模型，cap 是前端侧的能力筛选
+    channels: { list: [], presets: [], models: [], cap: "all" },
     trash: false,
     logs: [],
     logSeq: 0,
@@ -383,10 +385,11 @@ async function probeHealth() {
 /* ---------- 5. 视图切换 ---------- */
 
 const VIEW_META = {
-    overview: ["概览", "阶段 0-4 已实现的能力，数据全部来自后端真实接口"],
+    overview: ["概览", "阶段 0-5 已实现的能力，数据全部来自后端真实接口"],
     projects: ["画布项目", "快照整份替换 + version 乐观锁 + 逻辑删除回收站"],
     assets: ["素材库", "流式上传、SHA-256 秒传、标签筛选、引用计数清理"],
     prompts: ["提示词库", "第三方 JSON 拉取、内容摘要幂等同步、Redis 锁与标签缓存"],
+    channels: ["渠道与模型", "Key 加密落库、连通性探测、模型差量保存、跨渠道模型清单"],
     logs: ["接口流水", "每个请求的方法、业务码、耗时与请求/响应体"],
 };
 
@@ -407,6 +410,9 @@ function switchView(view) {
     // 提示词库第一次切过去时按需拉一次，之后走内存状态
     if (view === "prompts" && !state.prompts.sources.length) {
         refreshPrompts().catch((e) => toast("提示词加载失败：" + e.message, "error"));
+    }
+    if (view === "channels" && !state.channels.list.length) {
+        refreshChannels().catch((e) => toast("渠道加载失败：" + e.message, "error"));
     }
 }
 
@@ -450,7 +456,7 @@ async function loadAssets() {
 }
 
 async function loadAll() {
-    const jobs = [loadProjects(), loadAssets(), loadPrompts()];
+    const jobs = [loadProjects(), loadAssets(), loadPrompts(), loadChannels()];
     const results = await Promise.allSettled(jobs);
     for (const r of results) {
         if (r.status === "rejected") {
@@ -461,6 +467,7 @@ async function loadAll() {
     renderProjects();
     renderAssets();
     renderPrompts();
+    renderChannels();
 }
 
 /* ---------- 7. 概览 ---------- */
@@ -1470,6 +1477,241 @@ function makeArtwork({ title, c1, c2 }) {
     return cv.toDataURL("image/png");
 }
 
+/* ---------- 11.5 渠道与模型 ---------- */
+
+async function loadChannels() {
+    const [list, presets, models] = await Promise.all([
+        api("/channels", { silent: true }),
+        api("/channels/presets", { silent: true }),
+        api("/models", { silent: true }),
+    ]);
+    state.channels.list = list || [];
+    state.channels.presets = presets || [];
+    state.channels.models = models || [];
+    $("navChannels").textContent = state.channels.list.length;
+}
+
+async function refreshChannels() {
+    await loadChannels();
+    renderChannels();
+}
+
+function renderChannels() {
+    const c = state.channels;
+    $("channelCount").textContent = c.list.length + " 个渠道";
+    $("modelCount").textContent = c.models.length + " 个可用模型";
+
+    const select = $("presetSelect");
+    // 只重建选项，不动当前选中值——否则用户选了预设、一刷新就被重置
+    const current = select.value;
+    select.innerHTML = '<option value="">从国产厂商预设开始…</option>';
+    for (const preset of c.presets) {
+        select.append(el("option", { value: preset.key, text: preset.name }));
+    }
+    select.value = current;
+
+    const box = $("channelList");
+    box.innerHTML = "";
+    if (!c.list.length) {
+        box.append(el("div", { class: "empty", text: "还没有渠道。点「新建渠道」或先选一个厂商预设。" }));
+    }
+    for (const channel of c.list) {
+        const title = el("h5", {}, [el("span", { text: channel.name })]);
+        if (!channel.enabled) title.append(el("span", { class: "tag-mini", text: "停用" }));
+        if (channel.lastTestOk === true) title.append(el("span", { class: "tag-mini", text: "通" }));
+        if (channel.lastTestOk === false) title.append(el("span", { class: "tag-mini", text: "不通" }));
+
+        const meta = el("div", { class: "src-meta", text: `${channel.apiKeyHint} · ${channel.models.length} 个模型` });
+        const url = el("div", { class: "src-meta", text: channel.baseUrl });
+
+        const card = el("div", { class: "src-card" + (channel.enabled ? "" : " off") }, [title, meta, url]);
+        if (channel.lastTestError) card.append(el("div", { class: "src-err", text: channel.lastTestError }));
+
+        const ops = el("div", { class: "src-ops" });
+        ops.append(el("button", { class: "btn ghost", type: "button", text: "测试", onclick: () => testChannel(channel) }));
+        ops.append(el("button", {
+            class: "btn ghost", type: "button", text: channel.enabled ? "停用" : "启用",
+            onclick: () => toggleChannel(channel),
+        }));
+        ops.append(el("button", { class: "btn ghost", type: "button", text: "删除", onclick: () => removeChannel(channel) }));
+        card.append(ops);
+        box.append(card);
+    }
+
+    renderChannelModels();
+}
+
+function renderChannelModels() {
+    const c = state.channels;
+    const chips = $("modelChips");
+    chips.innerHTML = "";
+    for (const cap of ["all", "image", "video", "text", "audio"]) {
+        chips.append(el("button", {
+            class: "chip" + (c.cap === cap ? " on" : ""),
+            type: "button",
+            text: cap === "all" ? "全部" : cap,
+            onclick: () => {
+                c.cap = cap;
+                renderChannels();
+            },
+        }));
+    }
+
+    const box = $("modelList");
+    box.innerHTML = "";
+    const items = c.models.filter((m) => c.cap === "all" || m.capability === c.cap);
+    if (!items.length) {
+        box.append(el("div", { class: "empty", text: "没有可用模型。先建一个渠道并启用它。" }));
+        return;
+    }
+    for (const model of items) {
+        box.append(el("div", { class: "src-card" }, [
+            el("h5", {}, [
+                el("span", { text: model.name }),
+                el("span", { class: "tag-mini", text: model.capability }),
+            ]),
+            // id 就是前端要存进节点数据的那串：channelKey::modelName
+            el("div", { class: "src-meta", text: model.id }),
+            el("div", { class: "src-meta", text: "来自 " + model.channelName }),
+        ]));
+    }
+}
+
+function showChannelForm(show) {
+    $("channelForm").classList.toggle("hidden", !show);
+    if (show) {
+        $("cfStatus").textContent = "未探测";
+        $("cfName").focus();
+    }
+}
+
+function applyPreset() {
+    const key = $("presetSelect").value;
+    if (!key) return;
+    const preset = state.channels.presets.find((p) => p.key === key);
+    if (!preset) return;
+    $("cfName").value = preset.name;
+    $("cfBaseUrl").value = preset.baseUrl;
+    $("cfFormat").value = preset.apiFormat;
+    $("cfModels").value = (preset.models || []).map((m) => m.name).join(", ");
+    // Key 刻意不清空：用户可能已经粘好了，换预设不该把它弄丢
+    showChannelForm(true);
+    $("cfStatus").textContent = preset.note || "";
+}
+
+function parseModelNames(raw) {
+    const seen = new Set();
+    const out = [];
+    for (const part of (raw || "").split(/[,，\n\r]+/)) {
+        const name = part.trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        out.push({ name });
+    }
+    return out;
+}
+
+async function probeChannelDraft() {
+    const baseUrl = $("cfBaseUrl").value.trim();
+    if (!baseUrl) {
+        toast("先填 Base URL", "error");
+        return;
+    }
+    $("cfStatus").textContent = "探测中…";
+    try {
+        const result = await api("/channels/probe", {
+            method: "POST",
+            body: { baseUrl, apiKey: $("cfApiKey").value.trim(), apiFormat: $("cfFormat").value },
+        });
+        if (result.ok) {
+            const names = result.models.map((m) => m.name);
+            // 探测顺手把模型填好：这是"先测再存"最省事的地方
+            if (names.length && !$("cfModels").value.trim()) {
+                $("cfModels").value = names.join(", ");
+            }
+            $("cfStatus").textContent = `通 · ${names.length} 个模型 · ${result.latencyMs}ms`;
+            toast(result.message, "ok");
+        } else {
+            $("cfStatus").textContent = "不通：" + result.message;
+            toast(result.message, "error");
+        }
+    } catch (e) {
+        $("cfStatus").textContent = "探测失败：" + e.message;
+    }
+}
+
+async function saveChannel() {
+    const baseUrl = $("cfBaseUrl").value.trim();
+    const apiKey = $("cfApiKey").value.trim();
+    if (!baseUrl || !apiKey) {
+        toast("Base URL 和 API Key 都是必填", "error");
+        return;
+    }
+    try {
+        await api("/channels", {
+            method: "POST",
+            body: {
+                name: $("cfName").value.trim() || null,
+                baseUrl,
+                apiKey,
+                apiFormat: $("cfFormat").value,
+                models: parseModelNames($("cfModels").value),
+            },
+        });
+        toast("渠道已创建", "ok");
+        $("cfApiKey").value = "";
+        $("cfModels").value = "";
+        $("cfBaseUrl").value = "";
+        $("cfName").value = "";
+        $("presetSelect").value = "";
+        showChannelForm(false);
+        await refreshChannels();
+    } catch (e) {
+        toast("保存失败：" + e.message, "error");
+    }
+}
+
+async function testChannel(channel) {
+    toast("正在测试「" + channel.name + "」…");
+    try {
+        const result = await api(`/channels/${encodeURIComponent(channel.id)}/test`, { method: "POST" });
+        toast(result.ok ? `连接正常 · ${result.models.length} 个模型 · ${result.latencyMs}ms` : "连接失败：" + result.message,
+            result.ok ? "ok" : "error");
+        await refreshChannels();
+    } catch (e) {
+        toast("测试失败：" + e.message, "error");
+    }
+}
+
+async function toggleChannel(channel) {
+    try {
+        await api(`/channels/${encodeURIComponent(channel.id)}/enabled`, {
+            method: "PATCH",
+            query: { value: String(!channel.enabled) },
+        });
+        await refreshChannels();
+    } catch (e) {
+        toast("操作失败：" + e.message, "error");
+    }
+}
+
+async function removeChannel(channel) {
+    const confirmed = await confirmModal({
+        title: "删除渠道",
+        desc: `「${channel.name}」及其 ${channel.models.length} 个模型会被删除，Key 密文一并移除。`,
+        confirmText: "删除",
+        danger: true,
+    });
+    if (!confirmed) return;
+    try {
+        await api(`/channels/${encodeURIComponent(channel.id)}`, { method: "DELETE" });
+        toast("已删除", "ok");
+        await refreshChannels();
+    } catch (e) {
+        toast("删除失败：" + e.message, "error");
+    }
+}
+
 /* ---------- 12. 接口流水 ---------- */
 
 function renderLogs() {
@@ -1613,6 +1855,16 @@ function bindGlobal() {
     $("syncAllPrompts").addEventListener("click", syncAllSources);
     $("newPromptSource").addEventListener("click", createSource);
     $("syncSamplePrompt").addEventListener("click", createSampleSource);
+
+    $("newChannelBtn").addEventListener("click", () => {
+        // 再点一次收起，避免用户以为按钮没反应
+        const hidden = $("channelForm").classList.contains("hidden");
+        showChannelForm(hidden);
+    });
+    $("presetSelect").addEventListener("change", applyPreset);
+    $("cfProbe").addEventListener("click", probeChannelDraft);
+    $("cfSave").addEventListener("click", saveChannel);
+    $("cfCancel").addEventListener("click", () => showChannelForm(false));
 
     let promptSearchTimer = null;
     $("promptSearch").addEventListener("input", (e) => {

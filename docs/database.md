@@ -1,11 +1,11 @@
-# 数据库表结构说明（阶段 0 ~ 4）
+# 数据库表结构说明（阶段 0 ~ 5）
 
-> 本文档覆盖当前已建成的**全部 8 张表**，按阶段顺序组织，逐字段说明用途、约束与设计理由，并给出表与表之间的关联关系。
+> 本文档覆盖当前已建成的**全部 10 张表**，按阶段顺序组织，逐字段说明用途、约束与设计理由，并给出表与表之间的关联关系。
 >
 > - 权威来源：`src/main/resources/db/schema.sql`（应用每次启动自动执行，全部 `CREATE TABLE IF NOT EXISTS`）
 > - 实体来源：`com.infinitecanvas.canvas.entity.*`
 > - 若本文档与 `schema.sql` 不一致，**以 `schema.sql` 为准**，并请回头修正本文档。
-> - 最后更新：2026-11-18（阶段 4 完成时）
+> - 最后更新：2026-11-18（阶段 5 完成时）
 
 ---
 
@@ -13,10 +13,10 @@
 
 - **第二节**是全景图，先看它建立整体印象：有哪几张表、谁连谁。
 - **第三节**是所有表都要遵守的通用约定（主键、时间、逻辑删除、命名）。这一节最省事，读完后面就不需要重复解释。
-- **第四 ~ 七节**按阶段讲表：每个字段的用途 + 索引 + 这块为什么这么设计。
-- **第八节**是索引总表，把 8 张表的所有索引列在一起，标出每个索引被哪条 SQL 用到。
-- **第九节**是典型查询的执行路径，用来判断索引是否真的有效。
-- **第十、十一节**是数据量估算、已知问题与改进方向。面试被追问"这里有什么坑"时基本都在这两节。
+- **第四 ~ 八节**按阶段讲表：每个字段的用途 + 索引 + 这块为什么这么设计。
+- **第九节**是索引总表，把 10 张表的所有索引列在一起，标出每个索引被哪条 SQL 用到。
+- **第十节**是典型查询的执行路径，用来判断索引是否真的有效。
+- **第十一、十二节**是数据量估算、已知问题与改进方向。面试被追问"这里有什么坑"时基本都在这两节。
 
 ---
 
@@ -34,10 +34,14 @@
 | 6 | `t_asset` | 3 文件与素材 | 业务素材：文本/图片/视频/音频 | 有 | 是 |
 | 7 | `t_prompt_source` | 4 提示词库 | 提示词来源仓库 + 同步状态 | 有 | 是 |
 | 8 | `t_prompt` | 4 提示词库 | 从源同步下来的提示词条目 | 无 | 否，隶属源 |
+| 9 | `t_channel` | 5 渠道与模型 | 一个模型端点 + 加密存储的 API Key | 有 | 是 |
+| 10 | `t_channel_model` | 5 渠道与模型 | 渠道下可用的模型（能力分类 + 可选脚本） | 无 | 否，隶属渠道 |
 
-**为什么是这 8 张**：本项目的核心对象只有五个——人、画布、画布内容、媒体文件、提示词。AI 生成任务（阶段 5+）、会话（阶段 7）会在此基础上继续加表，届时本文档按同样格式追加一节。
+**为什么是这 10 张**：本项目的核心对象只有六个——人、画布、画布内容、媒体文件、提示词、模型渠道。AI 生成任务（阶段 6）、会话（阶段 7）会在此基础上继续加表，届时本文档按同样格式追加一节。
 
 注意阶段 4 的"父子"和阶段 2/3 不一样：阶段 2 的父是**用户自己的作品**（`t_canvas_project`），阶段 4 的父是**一份外部数据源的配置**（`t_prompt_source`）——提示词不是用户创建的，而是服务器定时从别人仓库里抓来的。这个差别决定了两张表的删除策略和唯一键设计（见 7.2）。
+
+阶段 5 的父子又是一种新形态：父（渠道）是用户维护的配置，子（模型）**也是用户从上游列表里挑出来的**，两边都不带"外部真实数据"的性质。所以它既不像阶段 2 那样整份替换，也不像阶段 4 那样按内容摘要幂等，而是**按名字做差量**（见 8.4）。
 
 ### 2.2 关系总图
 
@@ -84,6 +88,35 @@
 
 **为什么两个聚合根都挂在 `t_user` 下**：提示词源是"每个用户自己配的来源清单"。内置的 7 个源也是**按用户各插一份**（见 7.5），不是全站共享一张配置表。这样"我停用某个内置源"不会影响别人，代价是 `t_prompt` 的数据量 = 用户数 × 源数 × 每个源的条目数——在千级用户、万级条目的量级下可以接受，真要省空间应该把"源的元数据"和"用户的订阅关系"拆成两张表，但那是另一个阶段的复杂度。
 
+阶段 5 的第三棵树形态最简单，但有一处刻意的冗余：
+
+```
+                    t_user
+                      │ user_id
+                      ▼
+          ┌───────────────────────┐
+          │      t_channel        │  ← 聚合根：一个 OpenAI 兼容端点 + 一把加密的 Key
+          │      (聚合根)          │     每行有自己的启用状态、上次测试结果
+          └───────────┬───────────┘
+                      │ channel_id
+                      ▼
+          ┌───────────────────────┐
+          │   t_channel_model     │  ← 隶属数据：用户从上游 /models 里挑出来的模型
+          │    (隶属数据)          │     (channel_id, name) 唯一定位
+          └───────────────────────┘     还冗余了一份 user_id（见 8.5）
+```
+
+**它和阶段 2 的树"看起来一样"，实际上有三个关键差别**：
+
+| | 阶段 2（画布 → 节点/连线） | 阶段 5（渠道 → 模型） |
+| --- | --- | --- |
+| 子数据从哪来 | 前端本地生成，每次保存整份回传 | 用户从上游列表里挑，逐个维护 |
+| 保存语义 | **整份替换**（delete 全部 + 批量 insert） | **按名字差量**（新增/更新/删除） |
+| 子数据有没有 `deleted` | 无（保留行以便回收站恢复） | 无（真删，避免唯一键挡住重建） |
+| 子表有没有 `user_id` | 无（靠 `project_id` 间接归属） | **有**（跨渠道按能力查时省一次 join） |
+
+第三条差异最容易被质疑"违反范式"，理由见 8.5。
+
 Mermaid 版本（GitHub / 支持 Mermaid 的编辑器可直接渲染）：
 
 ```mermaid
@@ -96,6 +129,8 @@ erDiagram
     t_file ||--o{ t_asset : "file_id 被引用"
     t_user ||--o{ t_prompt_source : "user_id 归属"
     t_prompt_source ||--o{ t_prompt : "source_id 包含"
+    t_user ||--o{ t_channel : "user_id 归属"
+    t_channel ||--o{ t_channel_model : "channel_id 包含"
 
     t_user {
         bigint id PK
@@ -166,6 +201,28 @@ erDiagram
         json tags_json
         int sort_index
     }
+    t_channel {
+        bigint id PK
+        bigint user_id FK
+        varchar channel_key UK
+        varchar base_url
+        varchar api_key_cipher
+        varchar api_key_hint
+        varchar api_format
+        tinyint enabled
+        tinyint last_test_ok
+        tinyint deleted
+    }
+    t_channel_model {
+        bigint id PK
+        bigint user_id FK
+        bigint channel_id FK
+        varchar name UK
+        varchar capability
+        mediumtext script
+        tinyint enabled
+        int sort_index
+    }
 ```
 
 ### 2.3 三个"关系"要分清
@@ -177,6 +234,13 @@ erDiagram
 | **归属关系** | 有 `user_id` / `project_id`，查询必带 | `t_canvas_node.project_id` | 一对一归属，用来做越权校验和分片，永远是查询第一条件 |
 | **引用关系** | 存对方的**业务键**而不是主键 | `t_canvas_connection.from_node_key` → `t_canvas_node.node_key` | 对方主键会变，业务键不会 |
 | **派生关系** | 存对方的**快照值**，允许不同步 | `t_asset.bytes` 冗余自 `t_file.bytes`；`t_prompt_source.prompt_count` 冗余自 `COUNT(t_prompt)` | 读多写少，用一致性换查询性能 |
+
+还有一种常见做法是**把归属字段冗余到孙表**：`t_channel_model.user_id` 就是从 `t_channel` 抄下来的。
+
+它严格来说违反了第三范式（`user_id` 传递依赖于 `channel_id`），但在"查我所有生图模型"这种跨渠道查询里，
+省掉一次 join 或一次 `IN` 子查询。一致性靠"模型只在渠道保存时写入、`user_id` 从 token 取"来保证。
+同类做法在 `t_prompt.user_id` 上已经用过（见 7.3）——**当一个字段同时是"查询条件"和"归属依据"时，
+冗余往往是划算的**。
 
 数据表里**没有一条物理外键**（原因见 3.8），上面所有箭头都是逻辑关系，靠代码和索引保证。
 
@@ -1115,9 +1179,220 @@ if (source.getBuiltIn() == 1 && (request.url() != null || request.name() != null
 
 ---
 
-## 八、索引总表
+## 八、阶段 5：渠道与模型配置（2 张表）
 
-全部 8 张表共 **24 个索引** = 8 个主键（聚簇）+ 16 个二级索引（其中唯一索引 7 个、普通索引 9 个）。列表如下。标 ⚠️ 的是建议后续清理的冗余索引。
+### 8.1 两张表的关系
+
+```
+t_channel（一个模型端点 + 一把 Key）
+   │  channel_key     ← 对外业务键，前端模型值 channelKey::modelName 的前半截
+   │  base_url        ← 归一化后的根地址（去末尾斜杠、去锚点）
+   │  api_key_cipher  ← v1:base64(iv‖ciphertext‖tag)，AES-256-GCM
+   │  api_key_hint    ← sk-a****wxyz，只用于列表展示
+   │  last_test_*     ← 三列，最近一次连通性测试的结果
+   │
+   └──< t_channel_model（用户从上游挑出来的模型）
+           channel_id  ← 归属（逻辑外键）
+           user_id     ← 冗余自渠道（跨渠道按能力查时省 join，见 8.5）
+           name        ← 上游模型名，渠道内唯一
+           capability  ← image / video / text / audio
+           script      ← 可选的自定义请求脚本
+```
+
+和前面三种父子关系的对比：
+
+| | 阶段 2 `project → node` | 阶段 3 `file → asset` | 阶段 4 `source → prompt` | **阶段 5 `channel → model`** |
+| --- | --- | --- | --- | --- |
+| 子数据谁产生 | 用户画出来的 | 用户上传的 | 远端仓库 | 用户从上游列表里挑 |
+| 子数据能否单独改 | 能 | 能 | 不能 | **能**（单独启停、改脚本） |
+| 保存语义 | 整份替换 | 各自独立 | 批量 upsert | **按名字差量** |
+| 子表有 `deleted` | 无 | 有 | 无 | 无 |
+| 子表有 `user_id` | 无 | 有 | 有 | **有**（冗余） |
+
+> 一句话：**阶段 5 的子数据是"用户配置的副本"，既不像阶段 2 那样每次整份重写，也不像阶段 4 那样完全跟随远端。** 所以它需要自己的差量算法（8.4），而"要不要 `deleted`"的答案仍然是"不要"——理由和阶段 4 一样（子数据没有独立回收站语义）。
+
+### 8.2 `t_channel`（渠道表）
+
+#### 定位
+
+一行 = 一个可用的模型服务端点。它既是**配置**（地址、Key、协议），也是**状态**（启用、上次测试结果）。
+
+对应实体：`com.infinitecanvas.canvas.entity.Channel`
+
+#### 字段说明
+
+| 字段 | 类型 | 空 | 默认 | 含义 | 取值 / 约束 |
+| --- | --- | --- | --- | --- | --- |
+| `id` | BIGINT | 否 | — | 主键 | 雪花 ID，**不对外** |
+| `user_id` | BIGINT | 否 | — | 归属用户 | 从 JWT 取，进 WHERE 做越权隔离 |
+| `channel_key` | VARCHAR(64) | 否 | — | 业务键 | `ch_` + 12 位 hex，后端生成；URL 路径与模型值都用它 |
+| `name` | VARCHAR(100) | 否 | — | 显示名 | 允许重名（用户可能建两个"百炼"，一个测试额度一个生产） |
+| `base_url` | VARCHAR(512) | 否 | — | 接口根地址 | 已归一化；带不带版本段都行，拼接规则见 8.6 |
+| `api_key_cipher` | VARCHAR(512) | 否 | — | Key 密文 | `v1:` + base64(iv‖ciphertext‖tag)；**不允许 NULL**（8.3） |
+| `api_key_hint` | VARCHAR(32) | 否 | — | 脱敏提示 | `sk-a****wxyz`；≤8 字符的 Key 整个打码成 `****` |
+| `api_format` | VARCHAR(16) | 否 | `openai` | 接口协议 | `openai` / `gemini`，决定拉模型的路径与鉴权头 |
+| `enabled` | TINYINT | 否 | 1 | 是否启用 | `0` 时它的模型**不出现在 `/v1/models`** |
+| `sort_index` | INT | 否 | 0 | 渠道间排序 | 用户拖拽调整 |
+| `last_test_at` | DATETIME | 是 | NULL | 上次测试时间 | 换地址/换 Key 时**不清空**（事实仍成立） |
+| `last_test_ok` | TINYINT | 是 | NULL | 上次测试是否通过 | `1`/`0`/**NULL=从未测过**（三态，见 8.3） |
+| `last_test_error` | VARCHAR(500) | 是 | NULL | 上次失败原因 | 已翻译成人话；**不含 Key、不含上游响应体全文** |
+| `created_at` | DATETIME | 否 | CURRENT_TIMESTAMP | 创建时间 | — |
+| `updated_at` | DATETIME | 否 | CURRENT_TIMESTAMP ON UPDATE | 更新时间 | — |
+| `deleted` | TINYINT | 否 | 0 | 逻辑删除 | `0`=未删，`1`=已删 |
+
+#### 索引
+
+| 索引名 | 列 | 类型 | 支撑的查询 |
+| --- | --- | --- | --- |
+| `PRIMARY` | `id` | 聚簇 | 内部按 id 更新 |
+| `uk_channel_user_key` | `(user_id, channel_key)` | 唯一 | 按业务键定位 + 防重复插入；**两个条件都进 WHERE，等值命中** |
+| `idx_channel_user_sort` | `(user_id, deleted, sort_index)` | 普通 | 列表查询 + 排序 |
+
+`deleted` 放在索引**中间**而不是末尾：它是 `@TableLogic` 自动加上的等值条件，
+必须排在排序列（`sort_index`）之前，否则 `ORDER BY` 用不上索引（见 9.2）。
+
+#### 设计说明
+
+**① `api_key_cipher` 为什么不允许 NULL**
+
+允许"空 Key 的渠道"意味着列表里会出现一条永远调不通的配置。用户真正想做的
+"先填地址、Key 待会儿再弄"由**草稿探测**满足（`POST /v1/channels/probe`，不落库），
+不需要先在库里留半成品。
+
+**② 为什么没有 `base_url` 唯一约束**
+
+用户可能真的需要两个渠道指向同一地址、用两把不同的 Key（一把测试额度、一把生产）。
+做唯一约束会挡住这种正当用法。去重提示放前端，不强制。
+
+**③ 为什么没有 `t_channel_test_log`**
+
+连通性测试只保留"最近一次"结果，三列平铺在渠道表上。要留历史应该是独立的监控表
+（含时间序列、成功率聚合），而不是在主表旁边再挂一张明细表——那会让"列渠道"变成一次 join。
+
+### 8.3 `t_channel_model`（渠道模型表）
+
+#### 定位
+
+一行 = 渠道下可用的一个模型。用户从上游 `/models` 的返回里挑出来，可以单独停用、单独挂脚本。
+
+对应实体：`com.infinitecanvas.canvas.entity.ChannelModel`
+
+#### 字段说明
+
+| 字段 | 类型 | 空 | 默认 | 含义 | 取值 / 约束 |
+| --- | --- | --- | --- | --- | --- |
+| `id` | BIGINT | 否 | — | 主键 | 雪花；**必须稳定**，阶段 6 会引用它 |
+| `user_id` | BIGINT | 否 | — | 归属用户 | 冗余自渠道，见 8.5 |
+| `channel_id` | BIGINT | 否 | — | 所属渠道 | 逻辑外键，无物理约束 |
+| `name` | VARCHAR(128) | 否 | — | 上游模型名 | 如 `Qwen/Qwen-Image`；**渠道内唯一** |
+| `capability` | VARCHAR(16) | 否 | — | 能力分类 | `image` / `video` / `text` / `audio` |
+| `script` | MEDIUMTEXT | 是 | NULL | 自定义请求脚本 | 空表示用内置调用逻辑；允许被清空（要靠 wrapper 显式写 NULL） |
+| `enabled` | TINYINT | 否 | 1 | 是否可用 | `0` 时不出现在 `/v1/models` |
+| `sort_index` | INT | 否 | 0 | 渠道内顺序 | 保存时用数组下标覆盖 |
+| `created_at` | DATETIME | 否 | CURRENT_TIMESTAMP | 创建时间 | 差量保存时**保持不变** |
+| `updated_at` | DATETIME | 否 | CURRENT_TIMESTAMP ON UPDATE | 更新时间 | — |
+
+**没有 `deleted`**：见 8.4 末尾。
+
+#### 索引
+
+| 索引名 | 列 | 类型 | 支撑的查询 |
+| --- | --- | --- | --- |
+| `PRIMARY` | `id` | 聚簇 | 按 id 更新（差量保存时逐条更新） |
+| `uk_channel_model_name` | `(channel_id, name)` | 唯一 | 唯一性保证 + 保存时按名字比对 |
+| `idx_channel_model_user_cap` | `(user_id, capability)` | 普通 | `GET /v1/models?capability=image` |
+
+`uk_channel_model_name` 的第一个列是 `channel_id` 而不是 `user_id`：唯一性的范围是**渠道内**。
+两个不同渠道完全可以都有 `Qwen/Qwen-Image`（聚合平台很常见）。
+
+### 8.4 保存一次渠道的完整 SQL 序列
+
+用户在界面上点一次「保存」，后端执行的是（同一个事务）：
+
+```sql
+-- 1. 校验归属，拿渠道行
+SELECT * FROM t_channel WHERE user_id = ? AND channel_key = ? AND deleted = 0;
+
+-- 2. 更新渠道（只更新有变化的字段，null 不生成 SET）
+UPDATE t_channel SET name = ?, base_url = ?, api_format = ?, updated_at = ? WHERE id = ?;
+
+-- 3. 换了地址或 Key 时清空测试结论（保留 last_test_at）
+UPDATE t_channel SET last_test_ok = NULL, last_test_error = NULL WHERE id = ?;
+
+-- 4. 查出已有模型（用于差量比对）
+SELECT * FROM t_channel_model WHERE channel_id = ?;
+
+-- 5. 新增的模型
+INSERT INTO t_channel_model (id, user_id, channel_id, name, capability, script, enabled, sort_index, ...) VALUES (...);
+
+-- 6. 已有且仍在的模型（用 wrapper 显式 set，允许把 script 写成 NULL）
+UPDATE t_channel_model SET capability = ?, script = ?, enabled = ?, sort_index = ?, updated_at = ? WHERE id = ?;
+
+-- 7. 客户端删掉的模型（物理删）
+DELETE FROM t_channel_model WHERE id IN (...);
+```
+
+三个顺序/写法上的坑：
+
+| 位置 | 坑 | 后果 |
+| --- | --- | --- |
+| 第 2 步 | 用 `updateById(entity)` 而不是拼 SQL | 正好利用"跳过 null 字段"实现局部更新 |
+| 第 3 步 | 用 `update(null, wrapper).set(col, null)` | `updateById` 写不出 `SET col = NULL`，旧的失败原因永远清不掉 |
+| 第 7 步 | 必须在第 4 步之后 | 差量的"删除集"是 `已有 - 保留`，顺序反了就删错 |
+
+**为什么第 7 步是物理删除**：模型没有独立生命周期，渠道删了它就是悬空数据；
+而且逻辑删除会让 `uk_channel_model_name` 挡住"以后重新添加同名模型"
+（MySQL 的唯一索引不认 `deleted`，这是唯一索引的定义决定的）。
+
+### 8.5 为什么 `t_channel_model` 要冗余 `user_id`
+
+严格按第三范式，`user_id` 传递依赖于 `channel_id`，不该出现。
+
+但阶段 6 要回答的问题是"**我**有哪些生图模型"，这是一次**跨渠道**查询：
+
+```sql
+-- 有冗余：单表，走 idx_channel_model_user_cap
+SELECT * FROM t_channel_model WHERE user_id = ? AND capability = ? AND enabled = 1;
+
+-- 没冗余：要 join
+SELECT m.* FROM t_channel_model m
+JOIN t_channel c ON c.id = m.channel_id AND c.deleted = 0 AND c.enabled = 1
+WHERE c.user_id = ? AND m.capability = ? AND m.enabled = 1;
+```
+
+一致性靠两点保证：
+
+1. 模型**只能**通过渠道接口写入（没有独立的模型 CRUD），`user_id` 从 token 取，不可能写错；
+2. 渠道的 `user_id` 创建后不可变（没有"转移归属"功能）。
+
+同样的做法在 `t_prompt.user_id` 上已经用过（7.3）。**当一个字段同时是"查询条件"和"归属依据"时，
+冗余往往是划算的**——这是有意为之的反范式，不是漏设计。
+
+### 8.6 三处和"安全/协议"直接相关的设计
+
+**① `api_key_hint` 单独一列，不是每次现算**
+
+列表页是最高频接口。如果只存密文，显示 `sk-a****wxyz` 就要逐行解密，后果：
+换 `app.crypto.secret` 之后整页 50010，"看一眼我有哪些渠道"都做不到。
+多存 32 字节，换来列表接口**一行密文都不用碰**。
+
+**② `last_test_ok` 是三态，不是布尔**
+
+`1` 通过 / `0` 失败 / **NULL 从未测过**。用 `boolean` 就没法表达"没测过"，
+新建的渠道一上来就显示"失败"，用户会以为坏了。
+Java 侧用 `Integer`，出参转 `Boolean` 且 Jackson 配了 `non_null`，
+null 时字段整个不出现，前端 `if (x === true)` 天然正确。
+
+**③ `base_url` 存归一化后的值**
+
+去末尾斜杠（否则拼出 `//models`）、去锚点（对服务端无意义）、校验协议白名单。
+拼接 `GET /models` 的规则是：末段匹配 `v\d+[a-z]*` 就只补 `/models`，
+否则补 `/v1/models`——这样百炼的 `.../compatible-mode/v1` 不会变成 `/v1/v1/models`，
+DeepSeek 的 `https://api.deepseek.com`（官方明确不带 `/v1`）也不会漏掉版本段。
+
+## 九、索引总表
+
+全部 10 张表共 **30 个索引** = 10 个主键（聚簇）+ 20 个二级索引（其中唯一索引 9 个、普通索引 11 个）。列表如下。标 ⚠️ 的是建议后续清理的冗余索引。
 
 | 表 | 索引名 | 列 | 类型 | 被哪条 SQL 用到 |
 | --- | --- | --- | --- | --- |
@@ -1145,14 +1420,22 @@ if (source.getBuiltIn() == 1 && (request.url() != null || request.name() != null
 | `t_prompt` | PRIMARY | `id` | 聚簇 | 基本不用 |
 | `t_prompt` | `uk_prompt_source_key` | `(source_id, prompt_key)` | 唯一 | upsert 冲突判定 + 差量删除 |
 | `t_prompt` | `idx_prompt_user_source_order` | `(user_id, source_id, sort_index)` | 普通 | 列表 + 稳定排序 |
+| `t_channel` | PRIMARY | `id` | 聚簇 | 更新配置 / 回写测试结果 |
+| `t_channel` | `uk_channel_user_key` | `(user_id, channel_key)` | 唯一 | 按业务键定位（越权隔离）+ 防重复插入 |
+| `t_channel` | `idx_channel_user_sort` | `(user_id, deleted, sort_index)` | 普通 | 渠道列表 + 排序 |
+| `t_channel_model` | PRIMARY | `id` | 聚簇 | 差量保存时逐条更新 |
+| `t_channel_model` | `uk_channel_model_name` | `(channel_id, name)` | 唯一 | 唯一性 + 差量比对 |
+| `t_channel_model` | `idx_channel_model_user_cap` | `(user_id, capability)` | 普通 | `GET /v1/models?capability=` |
 
 ### 索引设计的三个共同点
 
-**① 归属列永远是第一列（有一个例外）**
+**① 归属列永远是第一列（有两个例外）**
 
-`idx_project_user_updated`、`idx_asset_user_created`、`idx_asset_user_kind`、`uk_file_user_sha`、`uk_prompt_source_user_key`、`idx_prompt_user_source_order`——全部以 `user_id` 或 `project_id` 开头。因为**每一条面向用户的业务查询都带归属条件**（越权校验的副产品）。索引第一列放归属，等于所有查询都能吃到索引。
+`idx_project_user_updated`、`idx_asset_user_created`、`idx_asset_user_kind`、`uk_file_user_sha`、`uk_prompt_source_user_key`、`idx_prompt_user_source_order`、`uk_channel_user_key`、`idx_channel_user_sort`、`idx_channel_model_user_cap`——全部以 `user_id` 或 `project_id` 开头。因为**每一条面向用户的业务查询都带归属条件**（越权校验的副产品）。索引第一列放归属，等于所有查询都能吃到索引。
 
-**例外：`idx_prompt_source_due (enabled, deleted, last_fetched_at)`**。它的使用方是定时任务，查询语义是"跨所有用户捞出到期的源"，SQL 里压根没有 `user_id`。这种**系统级扫描**的索引要按自己的条件排（等值 `enabled` → 等值 `deleted` → 范围 `last_fetched_at`），照抄"归属打头"反而会全表扫。
+**例外一：`idx_prompt_source_due (enabled, deleted, last_fetched_at)`**。它的使用方是定时任务，查询语义是"跨所有用户捞出到期的源"，SQL 里压根没有 `user_id`。这种**系统级扫描**的索引要按自己的条件排（等值 `enabled` → 等值 `deleted` → 范围 `last_fetched_at`），照抄"归属打头"反而会全表扫。
+
+**例外二：`uk_channel_model_name (channel_id, name)`**。第一列是 `channel_id` 而不是 `user_id`，因为唯一性的范围是“渠道内”——两个不同渠道完全可以都有 `Qwen/Qwen-Image`。它服务的是“按渠道查模型”，本来就要带 `channel_id`，所以唯一索引本身就是查询索引。
 
 > 所以真正的原则不是"归属列打头"，而是**"索引要匹配实际 SQL 的条件顺序"**。归属恰好是最常见的第一个条件，不是定律。
 
@@ -1195,7 +1478,7 @@ GROUP BY jt.tag;
 
 ---
 
-## 九、典型查询的执行路径
+## 十、典型查询的执行路径
 
 把索引和 SQL 对起来看，才能真正判断设计对不对。
 
@@ -1209,7 +1492,7 @@ GROUP BY jt.tag;
 | 6 | 回收站 | `SELECT * FROM t_canvas_project WHERE user_id=? AND deleted=1 ORDER BY updated_at DESC` | `idx_project_user_updated` | `deleted` 是索引第二列，能等值命中 |
 | 7 | 秒传查重 | `SELECT * FROM t_file WHERE user_id=? AND sha256=?` | `uk_file_user_sha` | 等值命中 |
 | 8 | 素材列表 | `... WHERE user_id=? AND deleted=0 ORDER BY created_at DESC, id DESC` | `idx_asset_user_created` | `created_at` 有序；`id` 作为第二排序键不额外排序 |
-| 9 | 按类型筛选 | `... AND kind=? ORDER BY created_at DESC` | `idx_asset_user_kind` | **需要 filesort**（见八节末） |
+| 9 | 按类型筛选 | `... AND kind=? ORDER BY created_at DESC` | `idx_asset_user_kind` | **需要 filesort**（见九节末） |
 | 10 | 标签过滤 | `... AND JSON_CONTAINS(tags_json, JSON_QUOTE(?))` | 同 8 | JSON 条件无法用索引，是在 8 的结果集上过滤 |
 | 11 | 标签聚合 | `JSON_TABLE(tags_json) ... GROUP BY jt.tag` | `idx_asset_user_created` | 先缩到用户范围，再炸开聚合 |
 | 12 | 删文件查引用 | `SELECT COUNT(*) FROM t_asset WHERE file_id=? AND deleted=0` | `idx_asset_file` | 等值命中 |
@@ -1223,12 +1506,17 @@ GROUP BY jt.tag;
 | 20 | 提示词搜索 | `... AND (title LIKE ? OR prompt LIKE ? OR description LIKE ?)` | 同 19 | `LIKE %kw%` 走不了索引，是在 19 的结果集上过滤（量级上万才需要换方案） |
 | 21 | 提示词标签聚合 | `JSON_TABLE(tags_json) ... GROUP BY jt.tag` | `idx_prompt_user_source_order` | 最贵的一条：要扫完该用户全部行再炸数组 → 所以加了 `PromptTagCache` |
 | 22 | 同步 upsert | `INSERT ... ON DUPLICATE KEY UPDATE` | `uk_prompt_source_key` | 唯一索引既做冲突判定又做定位 |
+| 23 | 渠道列表 | `... WHERE user_id=? AND deleted=0 ORDER BY sort_index, id` | `idx_channel_user_sort` | 三列全覆盖，**无 filesort** |
+| 24 | 按业务键定位渠道 | `... WHERE user_id=? AND channel_key=? AND deleted=0` | `uk_channel_user_key` | 等值命中；`user_id` 在 WHERE 里挡住越权 |
+| 25 | 渠道下的模型 | `SELECT * FROM t_channel_model WHERE channel_id=? ORDER BY sort_index` | `uk_channel_model_name` 左前缀 | 定位到渠道后有小排序，单渠道通常几十条 |
+| 26 | 我的某类模型 | `... WHERE user_id=? AND enabled=1 AND capability=?` | `idx_channel_model_user_cap` | 等值命中；但**还要在应用层按“渠道已启用”过滤**，见 12.1 |
+| 27 | 差量保存模型 | `UPDATE t_channel_model SET ... WHERE id=?` | PRIMARY | 逐条主键更新，行锁只落在变动行 |
 
 > 想看真实执行计划，在 MySQL 里跑：`EXPLAIN SELECT ...`，重点看 `key`（用了哪个索引）、`type`（`ref` / `range` / `ALL`）、`Extra`（出现 `Using filesort` / `Using temporary` 就要警惕）。
 
 ---
 
-## 十、数据量估算与容量规划
+## 十一、数据量估算与容量规划
 
 按"一个活跃用户"估算，用来判断哪些表会先变大、哪些字段该不该加索引：
 
@@ -1242,6 +1530,8 @@ GROUP BY jt.tag;
 | `t_asset` | 100 ~ 5000 | 建素材 | 300 万 |
 | `t_prompt_source` | 7（内置）+ 0 ~ 5（自定义） | 用户新增源 | 约 1 万 |
 | `t_prompt` | 7 个内置源 × 每个几十到几千条 ≈ 数千 | 同步（有去重，行数跟随远端总量） | 约 1000 万，**是将来最大的一张表** |
+| `t_channel` | 1 ~ 10 | 用户新增渠道 | 约 1 万，**增长最慢的表之一**（没人会配 100 个渠道） |
+| `t_channel_model` | 每个渠道 5 ~ 200，通常 1 ~ 5 个渠道 | 从上游列表导入 | 约 50 万；单行可能带 MEDIUMTEXT 脚本 |
 
 **关键观察**：
 
@@ -1252,11 +1542,11 @@ GROUP BY jt.tag;
 
 ---
 
-## 十一、已知问题与改进方向
+## 十二、已知问题与改进方向
 
 按"是否要现在改"排序，供后续阶段参考。
 
-### 11.1 现在就该知道的
+### 12.1 现在就该知道的
 
 | # | 问题 | 影响 | 建议 |
 | --- | --- | --- | --- |
@@ -1267,18 +1557,20 @@ GROUP BY jt.tag;
 | 5 | 画布节点直接引用图片但不建素材时，后端追踪不到引用 | 孤儿清理可能误删 | 清理已是手动 + 24h 宽限；彻底解决需给画布节点建 `t_file` 关联 |
 | 6 | 同一份公开提示词被每个用户各存一遍 | 用户量上来后 `t_prompt` 会按用户数线性膨胀 | 当前有意选择"空间换简单"（见第十节的观察 4）；要优化需抽出共享内容表 + 引用计数 |
 | 7 | 提示词源没有任何"连通性预检" | 用户填了个坏 URL 要等第一次同步失败才知道 | 可在新增源时同步做一次 `HEAD` 探测，但会拖慢保存接口；当前靠前端展示 `last_error` |
+| 8 | `t_channel_model` 只有 `user_id`，没有渠道启用状态 | 停用渠道后仍然能查到它的模型 | **已在应用层解决**：先查启用渠道 id 集合再过滤（`ChannelServiceImpl#models`）；根因是反范式冗余的代价，不建议加列 |
+| 9 | 渠道配置没有并发控制 | 同一账号开两个标签页同时保存，后写的覆盖先写的 | 当前接受（单用户配置、冲突概率极低）；要治需加 `@Version` 或按 `updated_at` 做条件更新 |
 
-### 11.2 后续阶段会动的表
+### 12.2 后续阶段会动的表
 
 | 阶段 | 预计新增 | 与本表结构的关系 |
 | --- | --- | --- |
 | ~~4 提示词库~~（已完成） | ~~`t_prompt`~~ → 实际建成 `t_prompt_source` + `t_prompt` | 独立聚合根，`t_prompt` 带 `user_id`；复用了 `t_asset` 的 tags JSON 思路，额外多了一个"源"的概念 |
-| 5 渠道与模型配置 | `t_channel`（渠道）+ 可能的 `t_model` | 存 API Key（加密）、Base URL、启用的模型清单；会被阶段 6 的生成任务引用 |
+| ~~5 渠道与模型配置~~（已完成） | ~~`t_channel` + `t_model`~~ → 实际建成 `t_channel` + `t_channel_model` | API Key 走 AES-256-GCM 密文 + 脱敏 hint 两列；模型独立成表以便按 `capability` 查；会被阶段 6 的生成任务按 id 引用 |
 | 6 AI 生成任务 | `t_generation_task` | 引用 `t_asset`（输入图/输出图）+ 存模型参数 JSON |
-| 6 画布与素材打通 | 可能给 `t_canvas_node` 加 `asset_id` 或建 `t_canvas_node_file` 关联 | 解决 11.1 的第 5 条 |
+| 6 画布与素材打通 | 可能给 `t_canvas_node` 加 `asset_id` 或建 `t_canvas_node_file` 关联 | 解决 12.1 的第 5 条 |
 | 7 会话/对话 | `t_conversation` + `t_message` | 消息表会是增长最快的表，需要分页策略 |
 
-### 11.3 明确不做的事
+### 12.3 明确不做的事
 
 | 事项 | 为什么不做 |
 | --- | --- |
@@ -1290,7 +1582,7 @@ GROUP BY jt.tag;
 
 ---
 
-## 十二、完整 DDL
+## 十三、完整 DDL
 
 以下就是 `schema.sql` 的全部内容，可直接粘贴到 MySQL 执行（`CREATE TABLE IF NOT EXISTS` 保证幂等）。
 
@@ -1499,6 +1791,61 @@ CREATE TABLE IF NOT EXISTS t_prompt
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_0900_ai_ci COMMENT ='提示词表';
+
+-- ============================================================
+-- 阶段 5：渠道与模型配置
+-- 设计要点：
+-- 1. 渠道 = 一个 OpenAI 兼容端点 + 一把 API Key；模型是它的附属数据（随渠道整体保存）；
+-- 2. API Key 只存密文（AES-GCM），另存一份脱敏提示 api_key_hint 供列表页展示，
+--    这样列表接口不需要解密任何一行——"要不要看一眼明文"和"要不要列一遍渠道"是两件事；
+-- 3. api_key_cipher 故意不给默认值也不允许 NULL：写作"空密码"的渠道没有意义，
+--    建渠道时 Key 必填，修改时才允许留空表示"保持不变"；
+-- 4. t_channel_model 用独立的表而不是 JSON 列：阶段 6 要按 capability 查"我有哪些生图模型"，
+--    需要索引；而且模型能被单独启用/停用，有独立生命周期。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS t_channel
+(
+    id           BIGINT        NOT NULL COMMENT '主键，MyBatis-Plus 雪花 ID',
+    user_id      BIGINT        NOT NULL COMMENT '归属用户',
+    channel_key  VARCHAR(64)   NOT NULL COMMENT '业务键，对外就是 channelId；前端模型值 channelId::modelName 里用的就是它',
+    name         VARCHAR(100)  NOT NULL COMMENT '渠道显示名，用户可改',
+    base_url     VARCHAR(512)  NOT NULL COMMENT '接口根地址，如 https://dashscope.aliyuncs.com/compatible-mode/v1',
+    api_key_cipher VARCHAR(512) NOT NULL COMMENT 'AES-GCM 密文，格式 v1:<base64(iv||ciphertext||tag)>',
+    api_key_hint VARCHAR(32)   NOT NULL COMMENT '脱敏提示，如 sk-a****wxyz；仅用于展示，不可还原',
+    api_format   VARCHAR(16)   NOT NULL DEFAULT 'openai' COMMENT '接口协议：openai / gemini',
+    enabled      TINYINT       NOT NULL DEFAULT 1 COMMENT '0=停用，停用后模型不出现在可选列表',
+    sort_index   INT           NOT NULL DEFAULT 0 COMMENT '用户排序',
+    last_test_at DATETIME      DEFAULT NULL COMMENT '最近一次连通性测试时间',
+    last_test_ok TINYINT       DEFAULT NULL COMMENT '1=通过 0=失败 NULL=从未测过',
+    last_test_error VARCHAR(500) DEFAULT NULL COMMENT '最近一次测试失败原因（不含密钥、不含响应体全文）',
+    created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted      TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0=未删 1=已删',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_channel_user_key (user_id, channel_key),
+    KEY idx_channel_user_sort (user_id, deleted, sort_index)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_0900_ai_ci COMMENT ='模型渠道表';
+
+CREATE TABLE IF NOT EXISTS t_channel_model
+(
+    id          BIGINT       NOT NULL COMMENT '主键，MyBatis-Plus 雪花 ID',
+    user_id     BIGINT       NOT NULL COMMENT '归属用户，冗余自渠道，按能力查模型时不用 join',
+    channel_id  BIGINT       NOT NULL COMMENT '所属渠道 t_channel.id',
+    name        VARCHAR(128) NOT NULL COMMENT '模型名（上游原始 id，如 qwen-image-3.0），渠道内唯一',
+    capability  VARCHAR(16)  NOT NULL COMMENT '能力分类：image / video / text / audio',
+    script      MEDIUMTEXT   DEFAULT NULL COMMENT '自定义请求脚本（可选），空表示用内置调用逻辑',
+    enabled     TINYINT      NOT NULL DEFAULT 1 COMMENT '0=停用，不出现在可选列表',
+    sort_index  INT          NOT NULL DEFAULT 0 COMMENT '渠道内展示顺序',
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_channel_model_name (channel_id, name),
+    KEY idx_channel_model_user_cap (user_id, capability)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_0900_ai_ci COMMENT ='渠道模型表';
 ```
 
 ### 验证表是否建好
@@ -1519,7 +1866,7 @@ ORDER BY TABLE_NAME;
 
 ---
 
-## 十三、面试高频问题速查
+## 十四、面试高频问题速查
 
 | 问题 | 一句话答案 | 详见 |
 | --- | --- | --- |
@@ -1537,18 +1884,26 @@ ORDER BY TABLE_NAME;
 | 标签为什么用 JSON 不用关联表 | 标签是弱结构、无独立生命周期；要重命名/排序/热度榜时才拆表 | 6.3 |
 | 删素材为什么不删文件 | 逻辑删除可恢复，删文件会裂图 | 6.4 |
 | 孤儿清理为什么子查询不带 `deleted=0` | 已删素材也算引用过，否则恢复后裂图 | 6.4 |
-| 索引第一列为什么大多是 `user_id` | 每条面向用户的查询都带归属条件（越权校验的副产品）；但跨用户的定时扫描是例外（见下一条） | 八节 |
-| `deleted` 为什么放索引中间 | 等值列必须在范围/排序列之前，否则 `ORDER BY` 用不上索引 | 八节 |
+| 索引第一列为什么大多是 `user_id` | 每条面向用户的查询都带归属条件（越权校验的副产品）；但跨用户的定时扫描、渠道内唯一的模型名是两个例外 | 九节 |
+| `deleted` 为什么放索引中间 | 等值列必须在范围/排序列之前，否则 `ORDER BY` 用不上索引 | 九节 |
 | 提示词表为什么没有 `deleted` | 它是远端数据的本地副本，重同步即可恢复；留着已删行只会让每次查询都要多过滤一次 | 3.4 / 7.3 |
 | 删源时提示词怎么处理 | 同一事务里物理删（`DELETE WHERE source_id=?`），不能只标记源 | 3.4 |
 | 重复同步如何做到幂等 | 两道闸门：ETag 条件请求命中 304 直接结束；否则算响应体 SHA-256，与上次一致就跳过解析和写库 | 7.2 / 7.4 |
 | 有了 304 为什么还要算摘要 | 静态托管/CDN 的 ETag 不可靠（可能缺、可能每个节点不同），摘要不依赖远端配合 | 7.2 |
 | 提示词唯一键为什么不是 `(user_id, prompt_key)` | 不同源会有相同 `prompt_key`，约束必须是"源内唯一"；`source_id` 已隐含归属 | 7.3 |
-| 定时任务的索引为什么不以 `user_id` 打头 | 它是跨用户的全局扫描，SQL 里没有 `user_id`；索引要匹配查询条件顺序而非"看起来该有的列" | 7.2 / 八节 |
-| 为什么只缓存标签不缓存列表 | 列表走索引够快；标签要做 `JSON_TABLE` 炸开再聚合，是全表级开销 | 八节末 |
+| 定时任务的索引为什么不以 `user_id` 打头 | 它是跨用户的全局扫描，SQL 里没有 `user_id`；索引要匹配查询条件顺序而非"看起来该有的列" | 7.2 / 九节 |
+| 为什么只缓存标签不缓存列表 | 列表走索引够快；标签要做 `JSON_TABLE` 炸开再聚合，是全表级开销 | 九节 |
 | 内置源为什么要按用户各插一份 | 让内置源和自定义源走完全相同的代码路径，避免到处 `if (builtIn)`；代价只是 7 行 × 用户数 | 7.5 |
 | 播种时并发插入冲突怎么办 | 唯一索引 `(user_id, source_key)` 会拦下第二个，捕获 `DuplicateKeyException` 忽略，比加分布式锁便宜 | 7.5 |
 | 同步成功为什么要显式把 `last_error` 写 NULL | MyBatis-Plus 默认忽略 null 字段，不清就会永久留着上次的错误 | 7.2 |
+| API Key 为什么加密存而不是明文 | 拖库、备份泄露、慢查询日志都会直接损失别人的额度；AES-GCM 还自带防篡改 | 8.2 |
+| 为什么另存一列 `api_key_hint` | 列表页是最高频接口，只存密文就要逐行解密，换密钥后整页都会 50010 | 8.2 |
+| `last_test_ok` 为什么是三态 | 用 boolean 表达不了“从未测过”，新渠道会误显示成“失败” | 8.2 |
+| 渠道模型为什么不做成 JSON 列 | 阶段 6 要按 `capability` 做带条件的聚合，JSON 列给不出；模型还有独立生命周期（单独启停、挂脚本） | 8.1 |
+| 模型表为什么冗余 `user_id` | 跨渠道按能力查时省一次 join；一致性靠“只从渠道接口写入 + `user_id` 取自 token”保证 | 8.5 |
+| 模型为什么物理删、渠道为什么逻辑删 | 模型没有独立生命周期，逻辑删除会让唯一键挡住同名重建；渠道有排查与回收站诉求 | 8.4 |
+| 模型唯一键为什么是 `(channel_id, name)` | 同一模型名可能出现在不同渠道（聚合平台很常见），唯一性范围是渠道内 | 8.3 |
+| 渠道配置为什么不要乐观锁 | 单用户自己的配置，并发只有“开两个标签页”，冲突概率极低且后果可控；画布才是多人协作的核心资产 | 12.1 |
 
 ---
 
@@ -1556,5 +1911,6 @@ ORDER BY TABLE_NAME;
 
 | 日期 | 阶段 | 变更 |
 | --- | --- | --- |
+| 2026-11-18 | 5 | 新增 `t_channel`、`t_channel_model` 两张表（共 10 张）；新增第八节「阶段 5：渠道与模型配置」，原第八~十三节顺延为第九~十四节；索引总表由 24 个补至 30 个；补充“索引第一列是归属”的第二个例外（渠道内唯一键）；执行路径补 5 条、容量估算补 2 行、已知问题补 2 条（渠道停用后模型过滤、渠道无并发控制） |
 | 2026-11-18 | 4 | 新增 `t_prompt_source`、`t_prompt` 两张表（共 8 张）；新增第七节「阶段 4：提示词库」，原第七~十二节顺延为第八~十三节；索引总表由 18 个补至 24 个，并修正原文"13 个索引"的错误计数；补充"索引第一列是归属"的例外说明、标签聚合的性能缺口、11.2 中阶段 4 的落地情况 |
 | 2026-11-16 | 1~3 | 首次成文，覆盖 `t_user`、`t_canvas_project`、`t_canvas_node`、`t_canvas_connection`、`t_file`、`t_asset` 共 6 张表 |
